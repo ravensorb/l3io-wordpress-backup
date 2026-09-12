@@ -1,0 +1,11 @@
+{
+  "version": "2.5.0",
+  "generated_from": "skills/_shared/",
+  "files": {
+    "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f",
+    "references/config-resolution.md": "db1ac9c41bb785c786663c1207f03b19451b399bb9577ef761216b5392182fd7",
+    "assets/module-setup.md": "6a183e230bb6e86ee8dcb4e9c4804dd9f99883de02e4fca4031f3500848a4048",
+    "scripts/pm-status.py": "0b1bf9c58d7a03aa87ea67244ce492bae3f73b8eb5616e573f7511a1c485e8ac",
+    "scripts/spec-align.py": "54e660827d75571f4757d74375cf5a48591bf39167359cc6def06aa82792ab9e"
+  }
+}
