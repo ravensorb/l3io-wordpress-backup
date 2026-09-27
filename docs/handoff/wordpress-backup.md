@@ -145,15 +145,30 @@ Do **not** read the PRD (70 KB) or the spine whole unless you need to. The spec 
   grew 52 KB → 66 KB, `check_prd.py` appeared). *Inference:* another session or a BMad
   workflow touched it. Verify before claiming authorship of anything in there.
 
-## Already in the shared KB — do not restate
+## Already in the shared KB — point at these, never restate them
 
-Two findings from this repo landed in basic-memory under `home-lab/` and should only be
-pointed at from here, never duplicated:
+Material from this repo lives in basic-memory, project **`main`** (the only project; `home-lab/`
+is a directory inside it, not a separate project). Verified present 2026-09-27:
 
-- the **MySQL GRANT underscore-wildcard** finding
-- the **restore-is-not-atomic** material
+- `main/home-lab/my-sql-provisioning-grant-wildcards-and-auth-ordering` — the GRANT
+  LIKE-pattern finding: a database-level `GRANT` matches its database name as a **LIKE
+  pattern**, so `_` is a single-character wildcard and `` GRANT … ON `wp_site`.* `` also grants
+  on `wpXsite`. Backticks do **not** suppress it. Also carries the auth-ordering material.
+- `main/home-lab/word-press-and-my-sql-restore-correctness` — the restore-is-not-atomic
+  material.
+- `main/home-lab/passing-my-sql-credentials-without-leaking-them` — `MYSQL_PWD` deprecated as
+  of MySQL 8.4 and called "extremely insecure" by the manual. *Authorship not verified* — this
+  session's material overlaps it, but `home-lab-db` may have written it. Read it rather than
+  assuming what it says.
 
-Together with the db-backup note they bracket the estate's backup problem from both ends. A
-peer noted that deleting the broad `act` note rather than leaving two competing versions is
-what made the KB usable — carry that instinct: **one authoritative note, deleted and replaced
-rather than duplicated.**
+A peer named only the first two; the third is closely related and worth reading with them.
+Together with the db-backup note they bracket the estate's backup problem from both ends.
+
+**The convention that made the KB usable:** one authoritative note, deleted and replaced rather
+than duplicated. When this session found it had two competing versions of an `act` note, it
+deleted the broader one instead of leaving both. Do the same.
+
+**Reading and writing it:** `mcp__basic-memory-cloud__*`, loaded via ToolSearch. Handoffs for
+home-lab and its sibling repos go to `home-lab/handoff/Handoff - <agent name>` in the KB
+(`note_type: handoff`, `status: active`); **this repo is not one of those**, which is why this
+note lives in the repo instead.
