@@ -102,7 +102,7 @@ Site Root members**" clause.
 ### AG-5 (MINOR→recorded here, `l3io-arch-review`) — Epic 2's title is inconsistent *within* `epics.md`
 
 The `## Epic 2` heading reads "take a backup and prove it"; the Epic List table row reads
-"back up and prove it". State nodes were corrected to the heading form in commit `f1c9b91`;
+"back up and prove it". State nodes were corrected to the heading form in commit `20361a5`;
 the table was not.
 
 ---
