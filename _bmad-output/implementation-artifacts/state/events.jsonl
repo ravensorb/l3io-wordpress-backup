@@ -38,3 +38,9 @@
 {"epic": "E007", "event": "import", "from": null, "key": "E007-S01-002", "node": "story", "session": null, "sprint": "S01", "to": "backlog", "ts": "2026-09-26T15:23:57Z"}
 {"epic": "E007", "event": "import", "from": null, "key": "E007-S01-003", "node": "story", "session": null, "sprint": "S01", "to": "backlog", "ts": "2026-09-26T15:23:57Z"}
 {"epic": "E007", "event": "import", "from": null, "key": "E007-S01-004", "node": "story", "session": null, "sprint": "S01", "to": "backlog", "ts": "2026-09-26T15:23:58Z"}
+{"agent": "l3io-arch-review", "epic": "002", "event": "dispatch_open", "session": "22822325-c91b-47d0-aa1c-ffbc547b95ca", "ts": "2026-09-27T17:15:27Z"}
+{"agent": "l3io-arch-review", "epic": "002", "event": "dispatch_close", "session": "22822325-c91b-47d0-aa1c-ffbc547b95ca", "ts": "2026-09-27T17:21:54Z"}
+{"cause": "cli", "epic": "002", "event": "issue_opened", "key": "BL-E002-001", "session": null, "severity": "Low", "ts": "2026-09-27T17:25:20Z"}
+{"cause": "cli", "epic": "002", "event": "issue_opened", "key": "BL-E002-002", "session": null, "severity": "Low", "ts": "2026-09-27T17:25:20Z"}
+{"cause": "cli", "epic": "002", "event": "issue_opened", "key": "BL-E002-003", "session": null, "severity": "Low", "ts": "2026-09-27T17:25:21Z"}
+{"cause": "cli", "epic": "002", "event": "issue_opened", "key": "BL-E002-004", "session": null, "severity": "Low", "ts": "2026-09-27T17:25:21Z"}

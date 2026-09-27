@@ -1,0 +1,35 @@
+next:
+  '002': 5
+backlog:
+- key: BL-E002-001
+  epic: '002'
+  sprint: ''
+  title: "epics.md Epic List table row says 'back up and prove it'; the ## Epic 2 heading says 'take a backup and prove it'"
+  source: arch-gate AG-5 (l3io-arch-review)
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md (AG-5)
+- key: BL-E002-002
+  epic: '002'
+  sprint: ''
+  title: "Story 2.1 drops FR-1's consequence: credentials resolved from wp-config.php when no Credential Provider is given"
+  source: arch-gate AG-22 (l3io-arch-review)
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md (AG-22)
+- key: BL-E002-003
+  epic: '002'
+  sprint: ''
+  title: Story 2.5 names the dependency wpconfigr; post-rename it is l3io-wp-config / import l3io.wp.config (ADR-0012, AD-27)
+  source: arch-gate AG-23 (l3io-arch-review)
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md (AG-23)
+- key: BL-E002-004
+  epic: '002'
+  sprint: ''
+  title: README CLI usage generated from --help and checked in CI belongs with the epic that freezes the CLI surface
+  source: arch-gate AG-25 (l3io-arch-review)
+  severity: Low
+  status: backlog
+  description: See _bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md (AG-25)
