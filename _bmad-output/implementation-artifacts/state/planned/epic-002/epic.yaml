@@ -1,0 +1,30 @@
+key: 'E002'
+title: 'Walking skeleton — take a backup and prove it'
+goal: 'One operator-visible capability (`backup` and `verify` both working end to end) that necessarily lands every shared contract: the Site Descriptor, the archive format, the `ports/` Protocols, the Run Context, the CLI parser, and the no-op command adapters that make Dry Run structural. **Sequential — it blocks everything else, and that is its job.**'
+status: backlog
+updated_at: '2026-09-26T15:26:26Z'
+origin: epics.md
+origin_note: goal and title taken from planning-artifacts/epics.md
+estimate:
+  man_hours_low: 82.4
+  man_hours_high: 93.63
+  hitl_hours_low: 4.78
+  hitl_hours_high: 5.43
+  elapsed_hours_low: 27.47
+  elapsed_hours_high: 31.21
+  tokens_k_min: 1931
+  tokens_k_max: 2194
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 7.98
+  cost_high: 9.06
+  model: claude-opus-5
+  confidence: medium

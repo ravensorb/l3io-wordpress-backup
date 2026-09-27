@@ -1,0 +1,30 @@
+key: 'S01'
+epic: 'E006'
+title: Sprint 01
+status: backlog
+updated_at: '2026-09-26T15:26:25Z'
+origin: inferred
+origin_note: derived from the story artifacts in this sprint directory
+estimate:
+  man_hours_low: 41.25
+  man_hours_high: 46.88
+  hitl_hours_low: 2.34
+  hitl_hours_high: 2.66
+  elapsed_hours_low: 13.75
+  elapsed_hours_high: 15.62
+  tokens_k_min: 966
+  tokens_k_max: 1098
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 3.98
+  cost_high: 4.53
+  model: claude-opus-5
+  confidence: medium

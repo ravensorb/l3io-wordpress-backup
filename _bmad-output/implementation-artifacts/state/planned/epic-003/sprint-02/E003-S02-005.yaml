@@ -1,0 +1,26 @@
+key: 'E003-S02-005'
+epic: 'E003'
+sprint: 'S02'
+title: Survive being killed mid-restore
+classification: complex
+status: backlog
+updated_at: '2026-09-26T15:25:29Z'
+estimate:
+  man_hours: 15.0
+  hitl_hours: 0.81
+  elapsed_hours: 5.0
+  tokens_k:
+    total: 350
+    input: 52
+    output: 18
+    cache_write: 105
+    cache_read: 175
+  cost: 1.45
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  confidence: low

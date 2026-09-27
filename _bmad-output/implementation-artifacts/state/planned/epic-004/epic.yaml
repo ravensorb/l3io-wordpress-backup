@@ -1,0 +1,30 @@
+key: 'E004'
+title: 'Archive lifecycle — exclusions, legacy reads, encryption'
+goal: 'Fills three seams the skeleton left open, each behind a port it does not share.'
+status: backlog
+updated_at: '2026-09-26T15:26:27Z'
+origin: epics.md
+origin_note: goal and title taken from planning-artifacts/epics.md
+estimate:
+  man_hours_low: 24.23
+  man_hours_high: 27.54
+  hitl_hours_low: 1.46
+  hitl_hours_high: 1.66
+  elapsed_hours_low: 8.08
+  elapsed_hours_high: 9.18
+  tokens_k_min: 569
+  tokens_k_max: 646
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 2.34
+  cost_high: 2.66
+  model: claude-opus-5
+  confidence: medium

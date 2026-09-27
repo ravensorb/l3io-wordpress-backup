@@ -1,0 +1,30 @@
+key: 'E006'
+title: 'Embed it in Python automation'
+goal: 'The PRD''s stated wager, and what SM-1 measures.'
+status: backlog
+updated_at: '2026-09-26T15:26:27Z'
+origin: epics.md
+origin_note: goal and title taken from planning-artifacts/epics.md
+estimate:
+  man_hours_low: 48.47
+  man_hours_high: 55.08
+  hitl_hours_low: 2.75
+  hitl_hours_high: 3.12
+  elapsed_hours_low: 16.15
+  elapsed_hours_high: 18.36
+  tokens_k_min: 1135
+  tokens_k_max: 1290
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 4.68
+  cost_high: 5.31
+  model: claude-opus-5
+  confidence: medium

@@ -1,0 +1,30 @@
+key: 'E003'
+title: 'Restore a site without destroying it'
+goal: 'The safety work, and the epic where getting it wrong destroys a customer''s site.'
+status: backlog
+updated_at: '2026-09-26T15:26:26Z'
+origin: epics.md
+origin_note: goal and title taken from planning-artifacts/epics.md
+estimate:
+  man_hours_low: 77.55
+  man_hours_high: 88.12
+  hitl_hours_low: 4.28
+  hitl_hours_high: 4.87
+  elapsed_hours_low: 25.85
+  elapsed_hours_high: 29.38
+  tokens_k_min: 1813
+  tokens_k_max: 2060
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 7.49
+  cost_high: 8.5
+  model: claude-opus-5
+  confidence: medium

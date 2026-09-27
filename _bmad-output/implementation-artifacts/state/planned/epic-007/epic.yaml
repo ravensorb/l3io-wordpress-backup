@@ -1,0 +1,30 @@
+key: 'E007'
+title: 'Move a site to a new URL'
+goal: 'The largest greenfield block, and the one capability that most distinguishes this from `mysqldump | tar`. Needs Epic 3''s restore path.'
+status: backlog
+updated_at: '2026-09-26T15:26:27Z'
+origin: epics.md
+origin_note: goal and title taken from planning-artifacts/epics.md
+estimate:
+  man_hours_low: 43.62
+  man_hours_high: 49.57
+  hitl_hours_low: 2.5
+  hitl_hours_high: 2.84
+  elapsed_hours_low: 14.54
+  elapsed_hours_high: 16.53
+  tokens_k_min: 1021
+  tokens_k_max: 1161
+  closure_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
+  orchestration_ratios:
+    man_hours: 0
+    hitl_hours: 0
+    elapsed_hours: 0
+    tokens_k: 0
+  cost_low: 4.21
+  cost_high: 4.79
+  model: claude-opus-5
+  confidence: medium
