@@ -1,0 +1,24 @@
+# Project overrides for l3io-pm-execute.
+# Layered over the skill's own customize.toml; survives a skill payload upgrade.
+
+[workflow]
+
+# Name the specs explicitly instead of discovering them.
+#
+# With spec_paths = [] (the default), spec-align.py walks planning_artifacts and
+# indexes every .md whose *filename* matches a prd/architecture/epics pattern.
+# In this project that also sweeps in review and reconcile outputs, which are
+# review products, not specs. Two of them (reviews/reconcile-prd.md and
+# review-polish-prd.md) were 15% of a 31 KB index, and ~13 more sit in the same
+# tree awaiting the next matching filename -- the index grew 24,720 -> 31,019
+# bytes from a single review pass. Every reviewer reads this file on every
+# dispatch, so the cost is paid ~30 times over.
+#
+# The dated run folder is globbed so an architecture or PRD re-run is picked up
+# without editing this file; the *filename* is pinned, so no review output can
+# match however the tree grows.
+spec_paths = [
+  "_bmad-output/planning-artifacts/architecture/*/ARCHITECTURE-SPINE.md",
+  "_bmad-output/planning-artifacts/prds/*/prd.md",
+  "_bmad-output/planning-artifacts/epics.md",
+]
