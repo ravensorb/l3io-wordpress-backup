@@ -5,3 +5,24 @@
 #
 # [agents.bmad-agent-pm]
 # description = "Prefers short, bulleted PRDs over narrative drafts."
+
+[modules.l3io-pm]
+# Model bindings. Without this section every dispatch and every cost figure in the
+# project resolves to the DEFAULT_ESTIMATE_MODEL baseline (claude-opus-5), which is
+# both the dispatch model and the rate card each `cost` is computed from.
+#
+# This is a security-sensitive rewrite -- Argon2id + chunked AES-GCM, PHP serialization
+# byte-length prefixes, GRANT LIKE-pattern escaping, MySQL auth-before-database-resolution,
+# a frozen CLI surface. The defects found during planning were all subtle domain
+# correctness, not sloppy code, so authors and reviewers on anything carrying a domain
+# trap stay on Opus. Only the four `simple` stories and the mechanical prep/closure
+# agents drop a tier.
+#
+# Story counts at time of writing: simple 4, standard 16, complex 6.
+default_model        = "claude-opus-5"   # pricing baseline; unknown id is a hard error (exit 2)
+model_story_simple   = "claude-sonnet-5"
+model_story_standard = "claude-opus-5"
+model_story_complex  = "claude-opus-5"
+model_review         = "claude-opus-5"   # reviewers caught every planning defect -- do not downgrade
+model_prep           = "claude-sonnet-5" # read the plan, write Spec: pointers -- mechanical
+model_closure        = "claude-sonnet-5"
