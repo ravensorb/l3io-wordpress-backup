@@ -2,7 +2,7 @@
 
 - **Repo:** `py-wordpress-backup` (being republished as the distribution `l3io-wp-backup`)
 - **Branch:** `main` (renamed from `master` this session; CI triggers follow `main`)
-- **Written:** 2026-09-27
+- **Written:** 2026-09-27 (KB pointers verified by reading note content, not search hits)
 - **Status:** active
 
 ## Resume line
@@ -156,13 +156,28 @@ is a directory inside it, not a separate project). Verified present 2026-09-27:
   on `wpXsite`. Backticks do **not** suppress it. Also carries the auth-ordering material.
 - `main/home-lab/word-press-and-my-sql-restore-correctness` — the restore-is-not-atomic
   material.
-- `main/home-lab/passing-my-sql-credentials-without-leaking-them` — `MYSQL_PWD` deprecated as
-  of MySQL 8.4 and called "extremely insecure" by the manual. *Authorship not verified* — this
-  session's material overlaps it, but `home-lab-db` may have written it. Read it rather than
-  assuming what it says.
+- `main/home-lab/passing-my-sql-credentials-without-leaking-them` — `--defaults-extra-file` is
+  additive and an ambient `~/.my.cnf` can silently redirect a restore; `MYSQL_PWD` deprecated
+  as of MySQL 8.4. **Authorship confirmed this session** (an earlier revision of this handoff
+  marked it unverified): it carries this session's `PYPI_CUSTOM_*`-is-stale /
+  `GITEA_TOKEN`-works finding and the `~/.actrc` placeholder-host note.
 
-A peer named only the first two; the third is closely related and worth reading with them.
-Together with the db-backup note they bracket the estate's backup problem from both ends.
+The first two are also this session's; `MySQL Provisioning…` is **not** — it is the sibling
+database work's note. Together with the db-backup note they bracket the estate's backup problem
+from both ends.
+
+**Known duplication — the GRANT finding lives in two notes with different evidence claims.**
+`MySQL Provisioning…` says "Verified on MySQL 5.7" (one server). `WordPress and MySQL Restore
+Correctness` says "Reproduced on MySQL 5.7, 8.0, 8.4 and MariaDB 11.4" (four). Same finding, two
+confidence levels — a reader who lands on the provisioning note first under-trusts a result that
+was actually reproduced four ways. Not contradictory, so nothing was changed unilaterally in
+another session's note; raised with `home-lab agent 4` instead. If you consolidate, the
+four-server claim is the measured one.
+
+**Also in `MySQL Provisioning…`:** a self-added provenance correction recording that its MariaDB
+**10.2 version floor was never tested by anyone who wrote it down** — it came from a subagent and
+was then propagated into a PRD's NFR-4 and to two peer sessions. Do not encode that floor into a
+version check without re-testing it.
 
 **The convention that made the KB usable:** one authoritative note, deleted and replaced rather
 than duplicated. When this session found it had two competing versions of an `act` note, it
