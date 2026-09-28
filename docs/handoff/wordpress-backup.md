@@ -29,6 +29,25 @@ Version restarts at **1.0.0** under the new name. Two sibling repos (`wordpress-
 their own sessions; imports are PEP 420 namespace (`from l3io.wp import backup`), see
 `docs/adr/0012-*` and `#ad-27`.
 
+## Where the out-of-repo material lives
+
+- [done] **Scratchpad preserved at `~/work-artifacts/py-wordpress-backup/`** (2026-09-28).
+  `/tmp` is tmpfs and does not survive a reboot. Verified by md5 over all 83 regular files:
+  byte-identical to the source. A `README.md` there separates what is worth keeping — the
+  one-shot `.py` generators that produced `epics.md` and the 26 story files — from what is
+  reproducible (prior-art clones of borg/borgmatic/restic/git, throwaway virtualenvs, the
+  deliberately-broken fixtures built to prove the `verify-install` gate had real scope).
+  Those generators matter more than they did: the gate found defects in the `epics.md` they
+  produced, so regenerating it is likely.
+- [done] **A pointer note exists in basic-memory** at
+  `main/home-lab/handoff/handoff-wordpress-backup` (`note_type: handoff`, `status: active`),
+  written 2026-09-28 and confirmed by reading its content back, not by trusting the write ack.
+  It is a *pointer* — this file stays authoritative. It carries the blockers and the four
+  pending decisions so a session that cannot reach this repo is not stranded.
+- [todo] `$HOME` is on `/`, which was at **91%** when this was written, and `/tmp` at 77%.
+  The preserved copy is ~4 MB. If disk is being reclaimed, the README names what is safe to
+  delete.
+
 ## Read these first, in this order
 
 1. `_bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md` — **the live
