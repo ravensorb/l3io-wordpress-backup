@@ -31,22 +31,26 @@ their own sessions; imports are PEP 420 namespace (`from l3io.wp import backup`)
 
 ## Where the out-of-repo material lives
 
-- [done] **Scratchpad preserved at `~/work-artifacts/py-wordpress-backup/`** (2026-09-28).
-  `/tmp` is tmpfs and does not survive a reboot. Verified by md5 over all 83 regular files:
-  byte-identical to the source. A `README.md` there separates what is worth keeping — the
-  one-shot `.py` generators that produced `epics.md` and the 26 story files — from what is
-  reproducible (prior-art clones of borg/borgmatic/restic/git, throwaway virtualenvs, the
-  deliberately-broken fixtures built to prove the `verify-install` gate had real scope).
-  Those generators matter more than they did: the gate found defects in the `epics.md` they
-  produced, so regenerating it is likely.
+- [done] **Generators preserved at `~/work-artifacts/py-wordpress-backup/`**. `/tmp` is tmpfs
+  and does not survive a reboot. What is kept is the 19 one-shot `.py` generators that produced
+  `epics.md`, the 26 story files and the plan snapshot — confirmed present and non-zero both
+  before and after the cleanup below. They matter more than they did: the gate found defects in
+  the `epics.md` they produced, so regenerating it is likely. `README.md` there lists which
+  script produced what.
+- [done] **Research clones deleted 2026-09-28** at Shawn's request, from both the scratchpad and
+  the preserved copy: the prior-art source trees (borg, borgmatic, restic, git, t2r), the
+  throwaway virtualenvs, and the deliberately-broken `verify-install` fixtures. All reproducible,
+  none work product; the README says how to get each back. Scratchpad 428 KB → 100 KB, preserved
+  copy 4.0 MB → 112 KB. Keepers were verified **before** deleting, and deletions used explicit
+  paths, never a glob — this estate has already lost a file to an over-broad glob.
 - [done] **A pointer note exists in basic-memory** at
   `main/home-lab/handoff/handoff-wordpress-backup` (`note_type: handoff`, `status: active`),
   written 2026-09-28 and confirmed by reading its content back, not by trusting the write ack.
   It is a *pointer* — this file stays authoritative. It carries the blockers and the four
   pending decisions so a session that cannot reach this repo is not stranded.
-- [todo] `$HOME` is on `/`, which was at **91%** when this was written, and `/tmp` at 77%.
-  The preserved copy is ~4 MB. If disk is being reclaimed, the README names what is safe to
-  delete.
+- [done] Disk pressure resolved estate-wide: `/` went 91% → **69%** and `/tmp` 77% → **37%**
+  across all sessions' cleanup. This session's own contribution was small (its scratchpad was
+  420 KB); most of the 1.7 GB came from a peer.
 
 ## Read these first, in this order
 
