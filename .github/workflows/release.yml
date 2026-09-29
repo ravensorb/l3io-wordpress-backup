@@ -61,7 +61,7 @@ jobs:
       - name: what is the latest release tag?
         if: inputs.bump != 'dev'
         id: latest
-        uses: LiquidLogicLabs/git-action-tag-info@v2.0.10
+        uses: LiquidLogicLabs/git-action-tag-info@v2
         with:
           tag-name: latest
           # Three components only. This repo has no tags yet; three components only, so the
@@ -72,7 +72,7 @@ jobs:
       - name: parse it into components
         if: inputs.bump != 'dev' && steps.latest.outputs.exists == 'true'
         id: parsed
-        uses: LiquidLogicLabs/git-action-tag-validate-version@v2.1.8
+        uses: LiquidLogicLabs/git-action-tag-validate-version@v2
         with:
           tag: ${{ steps.latest.outputs.name }}
           version-type: semver
@@ -147,7 +147,7 @@ jobs:
         # and the tag would have to be deleted by hand. Here, a missing entry
         # means no tag was ever created and there is nothing to undo.
         if: inputs.bump != 'dev'
-        uses: LiquidLogicLabs/git-action-changelog-parser@v3.0.14
+        uses: LiquidLogicLabs/git-action-changelog-parser@v2
         with:
           path: CHANGELOG.md
           version: ${{ steps.next.outputs.version }}
@@ -155,7 +155,7 @@ jobs:
 
       - name: create the tag
         if: inputs.bump != 'dev'
-        uses: LiquidLogicLabs/git-action-tag-create-update@v2.0.11
+        uses: LiquidLogicLabs/git-action-tag-create-update@v2
         with:
           tag-name: v${{ steps.next.outputs.version }}
           tag-message: |

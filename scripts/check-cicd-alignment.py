@@ -168,6 +168,54 @@ def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
         R("ver", f"version literal outside a metadata-reading module: {offenders}")
 
 
+_REF_CACHE: dict[str, bool] = {}
+
+
+def check_action_refs(repo: pathlib.Path, R, *, online: bool):
+    """Every `uses:` ref must EXIST, and org actions must be pinned to a major.
+
+    This rule exists because all three repos referenced
+    `LiquidLogicLabs/git-action-changelog-parser@v3.0.14` and there is no v3 --
+    the action's latest release is v2.1.5. Every release in every repo would have
+    failed with "Unable to resolve action". Nothing in any workflow, test or
+    checker noticed, because a version string reads as authoritative whether or
+    not it resolves. That is the documented-flag-that-does-not-exist failure in a
+    different costume.
+
+    Needs network, so it degrades to a skip rather than a false pass: when the
+    lookup cannot run, it says so instead of reporting the refs as fine.
+    """
+    import subprocess
+    refs: dict[str, set[str]] = {}
+    for f in sorted((repo / ".github" / "workflows").glob("*.yml")):
+        for m in re.finditer(r"uses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^\s\"']+)",
+                             f.read_text(encoding="utf-8")):
+            refs.setdefault(m.group(1), set()).add(m.group(2))
+
+    for action, tags in sorted(refs.items()):
+        is_org = action.startswith("LiquidLogicLabs/")
+        if is_org and len(tags) > 1:
+            R("act", f"{action} is pinned at {sorted(tags)} in the same repo -- one major per action")
+        for tag in sorted(tags):
+            if is_org and not re.fullmatch(r"v[0-9]+", tag):
+                R("act", f"{action}@{tag} is not a floating major; pin to vN")
+            if not online:
+                continue
+            key = f"{action}@{tag}"
+            if key not in _REF_CACHE:
+                # A branch-style ref (pypa's release/v1) is not a tag; try both.
+                ok = False
+                for kind in ("tags", "heads"):
+                    r = subprocess.run(["gh", "api", f"repos/{action}/git/ref/{kind}/{tag}"],
+                                       capture_output=True)
+                    if r.returncode == 0:
+                        ok = True
+                        break
+                _REF_CACHE[key] = ok
+            if not _REF_CACHE[key]:
+                R("act", f"{key} DOES NOT EXIST -- the workflow cannot resolve it")
+
+
 def check_release_process(repo: pathlib.Path, R):
     """release.yml, `make release`, and a changelog gate that runs BEFORE the tag.
 
@@ -315,6 +363,8 @@ def check_publish(doc, R):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--offline", action="store_true",
+                    help="skip the action-ref existence lookups (they need gh + network)")
     ap.add_argument("--root", default=str(pathlib.Path(__file__).resolve().parents[2]),
                     help="directory holding the package repos (default: this repo's parent)")
     a = ap.parse_args()
@@ -325,6 +375,13 @@ def main():
     if not repos:
         print(f"no package repos found under {root}", file=sys.stderr)
         return 2
+
+    import subprocess as _sp
+    online = not a.offline and _sp.run(["gh", "auth", "status"], capture_output=True).returncode == 0
+    if not online:
+        print("NOTE action-ref existence is NOT being checked "
+              f"({'--offline' if a.offline else 'gh unavailable or unauthenticated'}). "
+              "A ref that does not resolve will not be reported.")
 
     total = 0
     for repo in repos:
@@ -358,6 +415,7 @@ def main():
         check_namespace(ci_blob, pub_blob, is_ns, R)
         check_version_single_source(repo, pub_blob, R)
         check_release_process(repo, R)
+        check_action_refs(repo, R, online=online)
 
         # tracked-in-git check: a workflow that is not committed never runs
         import subprocess

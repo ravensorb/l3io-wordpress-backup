@@ -2,7 +2,7 @@
 
 class WpDatabaseMysqlFailed(Exception):
     """
-    Raised when the mysql command failes
+    Raised when the mysql command fails
 
     Args:
         message (str): message
