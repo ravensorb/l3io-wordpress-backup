@@ -45,6 +45,34 @@ def code_only(job) -> str:
         out.append(re.sub(r"\\n\s*#[^\\]*", " ", line))
     return "\n".join(out)
 
+def strip_comments(blob: str) -> str:
+    """Remove YAML/shell comments from a serialized workflow.
+
+    A `run:` block's comments survive serialization, so a rule that greps the blob
+    finds its own subject inside the comment that says the rule is satisfied.
+    """
+    out = []
+    for line in blob.splitlines():
+        s = line.lstrip()
+        if s.startswith("#"):
+            continue
+        out.append(re.sub(r"\\n\s*#[^\\]*", " ", line))
+    return "\n".join(out)
+
+
+def needs_closure(jobs: dict, start: str) -> set[str]:
+    """Every job transitively reachable through `needs` from `start`."""
+    seen: set[str] = set()
+    stack = list(jobs.get(start, {}).get("needs") or [])
+    while stack:
+        n = stack.pop()
+        if n in seen or n not in jobs:
+            continue
+        seen.add(n)
+        stack += list(jobs[n].get("needs") or [])
+    return seen
+
+
 # ---------------------------------------------------------------- rules
 
 def check_ci(doc, R):
@@ -72,8 +100,14 @@ def check_namespace(ci_blob, pub_blob, is_ns, R):
     if not re.search(shadow, ci_blob):
         R("ns", "ci.yml has no AD-27 __init__.py shadow guard -- a namespace break "
                 "reaches publish instead of the PR")
-    if "namespace" not in pub_blob.lower():
-        R("ns", "publish.yml does not re-check the namespace before publishing")
+    # Do NOT match the word "namespace": it appears in comments, so a file saying
+    # "we should check the namespace" and nothing else would pass. That is the
+    # comment-stripping hazard this checker warned another repo about, in this
+    # checker's own rule -- found by that repo reading it. Require the structural
+    # thing a real check must mention outside a comment.
+    if "__init__.py" not in strip_comments(pub_blob):
+        R("ns", "publish.yml has no structural namespace assertion (no __init__.py "
+                "check outside a comment) -- the word alone is not a check")
 
 def check_publish(doc, R):
     on, jobs = triggers(doc), doc.get("jobs", {})
@@ -145,8 +179,32 @@ def check_publish(doc, R):
         if "release" in str(on) and not excluded:
             R("pub", "release job does not exclude `release` events, but `release:` is a "
                      "trigger -- it will try to create a release that already exists")
-        if "always()" not in cond:
-            R("pub", "release `if:` lacks always(); it is not evaluated once publish-pypi skips")
+        c2 = cond.replace('"', "'")
+        # `if: !cancelled()` unquoted is invalid YAML (`!` starts a tag), so the real
+        # spellings are ${{ !cancelled() }} or a quoted scalar. Match on the function
+        # name with optional whitespace rather than one literal form.
+        forced = bool(re.search(r"always\s*\(\s*\)", c2) or
+                      re.search(r"!\s*cancelled\s*\(\s*\)", c2))
+        guards = re.findall(r"needs\.[A-Za-z0-9_-]+\.result", c2)
+        # Fire only when a job that CAN be skipped is actually in the release job's
+        # needs closure. The previous spelling fired on every release job, which
+        # encoded this repo's dependency graph as universal and was a false positive
+        # against a release job that needs only unconditional jobs -- reported by
+        # py-wordpress-database, verified by walking the closure.
+        conditional = sorted(n for n in needs_closure(jobs, "release") if jobs[n].get("if"))
+        if conditional and not forced:
+            R("pub", f"release can be skipped: {conditional} in its needs closure carry an "
+                     "`if:`, and a skipped dependency skips release. Needs always() or "
+                     "!cancelled() to stay evaluated")
+        # Independent of topology: a force function WITHOUT per-need result guards is
+        # actively harmful. Neither always() NOR !cancelled() filters a FAILED
+        # dependency -- any truthy `if:` overrides failure propagation -- so the force
+        # function alone cuts a release for a wheel that just failed its checks. Only
+        # explicit needs.<job>.result assertions distinguish skipped from failed.
+        if forced and not guards:
+            R("pub", "release `if:` forces evaluation (always()/!cancelled()) but asserts no "
+                     "needs.<job>.result -- a FAILED dependency would still cut a release. "
+                     "Neither function filters failure; only result checks do")
     return yaml.safe_dump(doc)
 
 # ---------------------------------------------------------------- driver
@@ -171,14 +229,26 @@ def main():
         wf = repo/".github"/"workflows"
         ci_p, pub_p = wf/"ci.yml", wf/"publish.yml"
         ci_blob = pub_blob = ""
+        # A parse failure is a finding, not an exception. Letting it raise ended the
+        # whole sweep at the first bad file, so repos after it were never examined --
+        # the checker stopped covering its own scope, which is the failure it exists
+        # to catch in others. Found by feeding it a workflow with invalid YAML.
         if not ci_p.exists():
             R("ci", "no ci.yml")
         else:
-            ci_blob = check_ci(load(ci_p), R)
+            try:
+                ci_blob = check_ci(load(ci_p), R)
+            except yaml.YAMLError as e:
+                R("ci", f"ci.yml is not valid YAML, so nothing in it was checked: "
+                        f"{str(e).splitlines()[0]}")
         if not pub_p.exists():
             R("pub", "no publish.yml")
         else:
-            pub_blob = check_publish(load(pub_p), R)
+            try:
+                pub_blob = check_publish(load(pub_p), R)
+            except yaml.YAMLError as e:
+                R("pub", f"publish.yml is not valid YAML, so nothing in it was checked: "
+                         f"{str(e).splitlines()[0]}")
 
         is_ns = (repo/"src"/"l3io").is_dir()
         check_namespace(ci_blob, pub_blob, is_ns, R)
