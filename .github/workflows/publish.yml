@@ -56,15 +56,30 @@ jobs:
         run: |
           test "${{ steps.parse.outputs.is-valid }}" = "true" \
             || { echo "::error::tag ${{ github.ref_name }} is not valid semver"; exit 1; }
-      - name: tag agrees with pyproject.toml
+      # The tag-vs-version comparison MOVED to `smoke`, where the wheel exists.
+      # pyproject.toml no longer carries a version literal to compare against --
+      # it is `dynamic = ["version"]`, so reading ['project']['version'] raises
+      # KeyError. This job keeps only the cheap checks, so a malformed tag fails in
+      # seconds without waiting for a build.
+      #
+      # Note for anyone porting this: a GREP-based reader would have found nothing
+      # here and compared the tag to an empty string, passing silently. tomllib
+      # raised instead. That difference is why the step was replaced rather than
+      # left to fail.
+      - name: pyproject declares the version dynamic, so there is one literal
         if: github.ref_type == 'tag'
         run: |
           set -euo pipefail
-          declared=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          tagged="${{ steps.parse.outputs.version }}"
-          echo "pyproject=$declared tag=$tagged"
-          [ "$declared" = "$tagged" ] || {
-            echo "::error::pyproject.toml declares $declared but the tag says $tagged"; exit 1; }
+          python3 -c "
+          import sys, tomllib
+          p = tomllib.load(open('pyproject.toml','rb'))['project']
+          if 'version' in p:
+              sys.exit('::error::pyproject.toml carries a static version literal; the '
+                       'single source is src/l3io/wp/backup/__init__.py')
+          if 'version' not in p.get('dynamic', []):
+              sys.exit('::error::pyproject.toml declares neither a version nor a dynamic version')
+          print('version is single-sourced')
+          "
 
   build:
     name: build distributions
@@ -153,6 +168,45 @@ jobs:
           uv run --isolated --no-project --python "${{ matrix.python }}" \
                  --with "$(ls dist/*.whl)" \
                  python -c "from l3io.wp import backup; print('import ok')"
+
+      # The version assertions live HERE, against the installed wheel, not in
+      # version-gate against the source tree. `__version__` is a literal and the
+      # distribution metadata is what hatchling resolved at build time; only the
+      # artifact exercises both mechanisms. A source-tree check can pass while the
+      # thing about to be published disagrees.
+      #
+      # This is PyPA's one explicit recommendation in its single-source discussion:
+      # assert import_name.__version__ == importlib.metadata.version("dist-name").
+      # https://packaging.python.org/en/latest/discussions/single-source-version/
+      - name: __version__ agrees with the wheel's own metadata
+        run: |
+          set -euo pipefail
+          uv run --isolated --no-project --python "${{ matrix.python }}" \
+                 --with "$(ls dist/*.whl)" \
+                 python -c "
+          from importlib.metadata import version
+          from l3io.wp import backup
+          attr, meta = backup.__version__, version('l3io-wp-backup')
+          print(f'__version__={attr} metadata={meta}')
+          assert attr == meta, f'__version__ {attr} != distribution metadata {meta}'
+          "
+
+      # The tag comparison, MOVED here from version-gate. It used to compare the
+      # tag to pyproject.toml's literal, which left a hole: the tag could agree
+      # with pyproject while __version__ -- the value in __all__, so the one users
+      # see -- said something else. Comparing the tag to the WHEEL's metadata
+      # covers tag, hatchling resolution and the source literal in one assertion,
+      # and cannot pass by reading a value the build did not use.
+      - name: the tag agrees with the wheel
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          wheel=$(ls dist/*.whl)
+          built=$(basename "$wheel" | cut -d- -f2)
+          tagged="${GITHUB_REF_NAME#v}"
+          echo "wheel=$built tag=$tagged"
+          [ "$built" = "$tagged" ] || {
+            echo "::error::the wheel is $built but the tag says $tagged"; exit 1; }
 
   namespace:
     # AD-27 — the l3io.wp namespace is PEP 420 native. A distribution that ships

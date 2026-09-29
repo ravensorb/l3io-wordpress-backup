@@ -109,6 +109,64 @@ def check_namespace(ci_blob, pub_blob, is_ns, R):
         R("ns", "publish.yml has no structural namespace assertion (no __init__.py "
                 "check outside a comment) -- the word alone is not a check")
 
+def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
+    """One version literal per distribution, and an assertion that the two ways agree.
+
+    Reported by py-wordpress-database: this family carried TWO hand-maintained
+    literals per repo (pyproject.toml and the module's __version__) with nothing
+    comparing them. They agreed by luck, so a tag would have gone green and proved
+    nothing -- and a version gate comparing the tag to pyproject.toml alone leaves
+    __version__ free to disagree with the value users see.
+
+    PyPA states no preference among its three single-sourcing options but makes one
+    explicit recommendation: assert import_name.__version__ equals
+    importlib.metadata.version("dist-name").
+    https://packaging.python.org/en/latest/discussions/single-source-version/
+    """
+    pyproject = repo / "pyproject.toml"
+    if not pyproject.is_file():
+        return
+    try:
+        import tomllib
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except Exception as e:
+        R("ver", f"pyproject.toml unreadable, so version single-sourcing was not checked: {e}")
+        return
+    project = data.get("project", {})
+    static = "version" in project
+    dynamic = "version" in (project.get("dynamic") or [])
+
+    # Count literals in the source tree too -- a static pyproject version is only
+    # half the problem; the pair is what drifts.
+    src_literals = sorted(
+        f.relative_to(repo).as_posix()
+        for f in repo.glob("src/**/*.py")
+        if re.search(r"^__version__\s*=", f.read_text(encoding="utf-8", errors="ignore"), re.M)
+    )
+    if static and src_literals:
+        R("ver", f"TWO version literals: pyproject.toml ({project['version']}) and "
+                 f"{', '.join(src_literals)} -- nothing forces them to agree")
+    elif static:
+        R("ver", "pyproject.toml carries a static version literal; prefer "
+                 'dynamic = ["version"] with [tool.hatch.version] so there is one source')
+    if dynamic and not data.get("tool", {}).get("hatch", {}).get("version"):
+        R("ver", 'pyproject.toml declares dynamic = ["version"] but no [tool.hatch.version] '
+                 "source -- the build has no version to read")
+    if len(src_literals) > 1:
+        R("ver", f"{len(src_literals)} __version__ literals in src/: {', '.join(src_literals)}")
+
+    # The PyPA agreement assertion must exist somewhere that runs.
+    if src_literals or dynamic:
+        blobs = [pub_blob]
+        for d in ("tests", "tools"):
+            for f in (repo / d).rglob("*.py") if (repo / d).is_dir() else []:
+                blobs.append(f.read_text(encoding="utf-8", errors="ignore"))
+        joined = strip_comments("\n".join(blobs))
+        if "importlib.metadata" not in joined and "importlib_metadata" not in joined:
+            R("ver", "nothing asserts __version__ == importlib.metadata.version(dist) -- "
+                     "PyPA's one explicit recommendation for single-sourcing")
+
+
 def check_publish(doc, R):
     on, jobs = triggers(doc), doc.get("jobs", {})
     push = on.get("push") or {}
@@ -252,6 +310,7 @@ def main():
 
         is_ns = (repo/"src"/"l3io").is_dir()
         check_namespace(ci_blob, pub_blob, is_ns, R)
+        check_version_single_source(repo, pub_blob, R)
 
         # tracked-in-git check: a workflow that is not committed never runs
         import subprocess

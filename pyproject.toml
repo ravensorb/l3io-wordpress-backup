@@ -1,6 +1,12 @@
 [project]
 name = "l3io-wp-backup"
-version = "1.0.0"
+# ONE version literal for this distribution, at src/l3io/wp/backup/__init__.py.
+# It was two -- here and there -- with nothing comparing them, so the tag could
+# agree with pyproject while __version__ (which is in __all__, so it is the value
+# users see) said something else. They happened to agree, which means a v1.0.0 tag
+# would have gone green and proved nothing. Now there is no second value to drift
+# from: hatchling reads the module literal at build time.
+dynamic = ["version"]
 description = "WordPress backup, restore and relocation for automation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -100,6 +106,9 @@ dev = [
   "opentelemetry-sdk>=1.40,<2",
   "opentelemetry-exporter-otlp-json-file>=0.65b0",
 ]
+
+[tool.hatch.version]
+path = "src/l3io/wp/backup/__init__.py"
 
 [build-system]
 requires = ["hatchling"]
