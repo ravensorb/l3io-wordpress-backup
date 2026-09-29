@@ -200,3 +200,6 @@ release-dev: ## Publish a dev build of this commit to the mirror (no tag)
 # typo for the real target, so say so rather than silently succeeding.
 $(_BUMP_WORDS):
 	@case " $(MAKECMDGOALS) " in \
+	  *" release "*) : ;; \
+	  *) echo "make: '$@' is not a target. Did you mean 'make release $@'?"; exit 2 ;; \
+	esac

@@ -46,17 +46,25 @@ jobs:
       # A dev build needs no version decision at all: the commit's distance from
       # the last tag already determines it. Hand straight over to publish.yml,
       # which is the only thing that publishes.
+      # Dispatched through the org action rather than a hand-rolled `gh workflow
+      # run`: it is the maintained implementation of this, and it speaks Gitea as
+      # well as GitHub, so dispatching from the self-hosted instance later needs
+      # no second version of this step.
+      #
+      # `workflow-name` is publish.yml's top-level `name:` field -- "Publish" --
+      # not the filename and not a job name.
       - name: dev build -- publish this commit to the mirror
         if: inputs.bump == 'dev'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh workflow run publish.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref "${GITHUB_REF_NAME}" \
-            -f target=mirror
-          echo "::notice::dispatched a dev publish for ${GITHUB_SHA}; the version is derived from the commit distance"
+        uses: LiquidLogicLabs/git-action-trigger-workflow@v2
+        with:
+          workflow-name: Publish
+          ref: ${{ github.ref_name }}
+          inputs: '{"target": "mirror"}'
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: say what was dispatched
+        if: inputs.bump == 'dev'
+        run: echo "::notice::dispatched a dev publish for ${GITHUB_SHA}; the version is derived from the commit distance"
 
       - name: what is the latest release tag?
         if: inputs.bump != 'dev'
@@ -166,6 +174,23 @@ jobs:
           # the registry filename is spent.
           update-existing: 'false'
           force: 'false'
+
+      # Move v<major> and v<major>.<minor> onto the new release.
+      #
+      # This family consumes its own actions by floating major (Shawn's ruling),
+      # which only works because something maintains those tags -- so these
+      # packages maintain theirs for the same reason. It runs AFTER the real tag
+      # exists, because the floating tags point at it.
+      #
+      # ignore-prerelease defaults true, so a dev or rc tag never moves a floating
+      # tag onto a prerelease. update-minor defaults true; it was false until v3
+      # of that action, and every consuming repo wanted it, so the default now
+      # matches what its README always showed.
+      - name: move the floating major and minor tags
+        if: inputs.bump != 'dev'
+        uses: LiquidLogicLabs/git-action-tag-floating-version@v2
+        with:
+          tag: v${{ steps.next.outputs.version }}
 
       - name: summary
         if: inputs.bump != 'dev'
