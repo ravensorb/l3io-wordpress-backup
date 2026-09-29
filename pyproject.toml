@@ -97,6 +97,11 @@ test = [
   # The AD-27 namespace test builds a wheel and an sdist with the project's own
   # backend, in process, so it needs no network and no build-env resolution.
   "hatchling>=1.32,<2",
+  # tests/contracts/test_workflow_invariants.py parses .github/workflows/*.yml.
+  # A real YAML parser, not a regex: rule 1, and the workflow files are exactly
+  # the kind of input where a hand-rolled parser silently disagrees with the
+  # runner's own (a single U+0085 once silenced fourteen CI jobs that way).
+  "PyYAML>=6.0,<7",
 ]
 dev = [
   { include-group = "test" },

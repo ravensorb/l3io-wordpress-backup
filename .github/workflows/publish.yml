@@ -159,6 +159,27 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
+      # Resolve THE wheel once, asserting the set has exactly one member.
+      #
+      # `ls dist/*.whl` assumes a set of size one and never checks it. With a stale
+      # wheel alongside a fresh one it expands to two paths and whatever consumes it
+      # gets a nonsense argument; with zero wheels the glob does not expand and the
+      # literal string `dist/*.whl` is passed instead. Neither case errors where the
+      # mistake is. This ran green locally only because act binds the working tree,
+      # which had exactly one wheel -- a real runner starts empty, so the failure
+      # would have waited for the first build that produced two artifacts.
+      - name: resolve the one wheel
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}: ${wheels[*]-none}"
+            exit 1
+          fi
+          echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
+          echo "resolved ${wheels[0]}"
+
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.11.6"
@@ -166,7 +187,7 @@ jobs:
       - run: |
           set -euo pipefail
           uv run --isolated --no-project --python "${{ matrix.python }}" \
-                 --with "$(ls dist/*.whl)" \
+                 --with "$WHEEL" \
                  python -c "from l3io.wp import backup; print('import ok')"
 
       # The version assertions live HERE, against the installed wheel, not in
@@ -182,7 +203,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run --isolated --no-project --python "${{ matrix.python }}" \
-                 --with "$(ls dist/*.whl)" \
+                 --with "$WHEEL" \
                  python -c "
           from importlib.metadata import version
           from l3io.wp import backup
@@ -201,7 +222,7 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           set -euo pipefail
-          wheel=$(ls dist/*.whl)
+          wheel="$WHEEL"
           built=$(basename "$wheel" | cut -d- -f2)
           tagged="${GITHUB_REF_NAME#v}"
           echo "wheel=$built tag=$tagged"
@@ -219,6 +240,27 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
+      # Resolve THE wheel once, asserting the set has exactly one member.
+      #
+      # `ls dist/*.whl` assumes a set of size one and never checks it. With a stale
+      # wheel alongside a fresh one it expands to two paths and whatever consumes it
+      # gets a nonsense argument; with zero wheels the glob does not expand and the
+      # literal string `dist/*.whl` is passed instead. Neither case errors where the
+      # mistake is. This ran green locally only because act binds the working tree,
+      # which had exactly one wheel -- a real runner starts empty, so the failure
+      # would have waited for the first build that produced two artifacts.
+      - name: resolve the one wheel
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}: ${wheels[*]-none}"
+            exit 1
+          fi
+          echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
+          echo "resolved ${wheels[0]}"
+
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.11.6"
@@ -226,7 +268,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run --isolated --no-project \
-                 --with "$(ls dist/*.whl)" \
+                 --with "$WHEEL" \
                  --with l3io-wp-config --with l3io-wp-database \
                  python - <<'PY'
           import importlib.util, pathlib, sys
@@ -252,6 +294,27 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
+      # Resolve THE wheel once, asserting the set has exactly one member.
+      #
+      # `ls dist/*.whl` assumes a set of size one and never checks it. With a stale
+      # wheel alongside a fresh one it expands to two paths and whatever consumes it
+      # gets a nonsense argument; with zero wheels the glob does not expand and the
+      # literal string `dist/*.whl` is passed instead. Neither case errors where the
+      # mistake is. This ran green locally only because act binds the working tree,
+      # which had exactly one wheel -- a real runner starts empty, so the failure
+      # would have waited for the first build that produced two artifacts.
+      - name: resolve the one wheel
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}: ${wheels[*]-none}"
+            exit 1
+          fi
+          echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
+          echo "resolved ${wheels[0]}"
+
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
@@ -272,6 +335,27 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
+      # Resolve THE wheel once, asserting the set has exactly one member.
+      #
+      # `ls dist/*.whl` assumes a set of size one and never checks it. With a stale
+      # wheel alongside a fresh one it expands to two paths and whatever consumes it
+      # gets a nonsense argument; with zero wheels the glob does not expand and the
+      # literal string `dist/*.whl` is passed instead. Neither case errors where the
+      # mistake is. This ran green locally only because act binds the working tree,
+      # which had exactly one wheel -- a real runner starts empty, so the failure
+      # would have waited for the first build that produced two artifacts.
+      - name: resolve the one wheel
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}: ${wheels[*]-none}"
+            exit 1
+          fi
+          echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
+          echo "resolved ${wheels[0]}"
+
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   preflight:
@@ -324,6 +408,27 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
+      # Resolve THE wheel once, asserting the set has exactly one member.
+      #
+      # `ls dist/*.whl` assumes a set of size one and never checks it. With a stale
+      # wheel alongside a fresh one it expands to two paths and whatever consumes it
+      # gets a nonsense argument; with zero wheels the glob does not expand and the
+      # literal string `dist/*.whl` is passed instead. Neither case errors where the
+      # mistake is. This ran green locally only because act binds the working tree,
+      # which had exactly one wheel -- a real runner starts empty, so the failure
+      # would have waited for the first build that produced two artifacts.
+      - name: resolve the one wheel
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}: ${wheels[*]-none}"
+            exit 1
+          fi
+          echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
+          echo "resolved ${wheels[0]}"
+
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.11.6"
@@ -342,7 +447,7 @@ jobs:
         id: mirrored
         run: |
           set -euo pipefail
-          wheel=$(basename "$(ls dist/*.whl | head -1)")
+          wheel=$(basename "$WHEEL")
           raw="${wheel%%-*}"; ver="$(echo "$wheel" | cut -d- -f2)"
           # PEP 503 normalisation — the wheel says l3io_wp_backup, the API wants l3io-wp-backup
           name="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[-_.]+/-/g')"
@@ -394,6 +499,27 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
+      # Resolve THE wheel once, asserting the set has exactly one member.
+      #
+      # `ls dist/*.whl` assumes a set of size one and never checks it. With a stale
+      # wheel alongside a fresh one it expands to two paths and whatever consumes it
+      # gets a nonsense argument; with zero wheels the glob does not expand and the
+      # literal string `dist/*.whl` is passed instead. Neither case errors where the
+      # mistake is. This ran green locally only because act binds the working tree,
+      # which had exactly one wheel -- a real runner starts empty, so the failure
+      # would have waited for the first build that produced two artifacts.
+      - name: resolve the one wheel
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one wheel in dist/, found ${#wheels[@]}: ${wheels[*]-none}"
+            exit 1
+          fi
+          echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
+          echo "resolved ${wheels[0]}"
+
       - uses: LiquidLogicLabs/git-action-release@v2
         with:
           tag: ${{ github.ref_name }}

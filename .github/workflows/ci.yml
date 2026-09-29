@@ -45,6 +45,14 @@ jobs:
       UV_PROJECT_ENVIRONMENT: /tmp/l3io-venv-static
     steps:
       - uses: actions/checkout@v7
+        with:
+          # fetch-depth: 0 on EVERY checkout, not only the jobs that build.
+          # A dynamic version read from git means `uv run` builds the package, so
+          # even a lint-only job versions an artifact -- and actions/checkout
+          # defaults to depth 1 with NO TAGS, which makes setuptools-scm fall back
+          # to 0.1.dev1 and the job pass GREEN with a misversioned build. Applied
+          # uniformly because which jobs build is a fact that changes.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.11.6"
@@ -64,6 +72,14 @@ jobs:
       UV_PROJECT_ENVIRONMENT: /tmp/l3io-venv-contracts
     steps:
       - uses: actions/checkout@v7
+        with:
+          # fetch-depth: 0 on EVERY checkout, not only the jobs that build.
+          # A dynamic version read from git means `uv run` builds the package, so
+          # even a lint-only job versions an artifact -- and actions/checkout
+          # defaults to depth 1 with NO TAGS, which makes setuptools-scm fall back
+          # to 0.1.dev1 and the job pass GREEN with a misversioned build. Applied
+          # uniformly because which jobs build is a fact that changes.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.11.6"
@@ -181,6 +197,14 @@ jobs:
       UV_PROJECT_ENVIRONMENT: /tmp/l3io-venv-py${{ matrix.python }}-${{ matrix.engine.name }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # fetch-depth: 0 on EVERY checkout, not only the jobs that build.
+          # A dynamic version read from git means `uv run` builds the package, so
+          # even a lint-only job versions an artifact -- and actions/checkout
+          # defaults to depth 1 with NO TAGS, which makes setuptools-scm fall back
+          # to 0.1.dev1 and the job pass GREEN with a misversioned build. Applied
+          # uniformly because which jobs build is a fact that changes.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.11.6"
