@@ -1,0 +1,348 @@
+# l3io-wp-backup publish.
+#
+# DELIBERATELY A SEPARATE FILE FROM ci.yml, AND act MUST NEVER RUN IT.
+# act has no OIDC and ignores `job.permissions` entirely, so an `if:` guard
+# would not protect this — act would run the publish job and fail confusingly.
+# File separation is the only reliable boundary. The repo .actrc points act at
+# ci.yml; keep it that way.
+#
+# Shape follows the PyPI-documented pattern: build once, hand the artifact to a
+# separate job that holds `id-token: write`. Trusted publishing cannot live in a
+# reusable workflow — PyPI matches the called workflow's filename — so this is a
+# top-level job in this repository and stays that way.
+#
+# Release ORDER across the three packages is manual and documented in
+# RELEASING.md: l3io-wp-config, then l3io-wp-database, then l3io-wp-backup.
+# Each is gated on
+# the previous one resolving from the index. No cross-repo automation.
+
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+  # Cutting a release is sufficient to mirror; it does not have to be a tag push.
+  # The release job excludes this event explicitly — see its `if:` — because on a
+  # `release: published` run the release already exists and creating it again fails.
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to publish
+        type: choice
+        options: [testpypi, pypi, mirror]
+        default: testpypi
+
+permissions: {}
+
+jobs:
+  version-gate:
+    # Fails the release when the tag and pyproject.toml disagree, which catches
+    # publishing a version nobody tagged. Uses the house actions in preference to
+    # hand-rolled run: steps; tags verified with git ls-remote before pinning.
+    name: version gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - id: parse
+        uses: LiquidLogicLabs/git-action-tag-validate-version@v2
+        with:
+          tag: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          version-type: semver
+      - name: tag parses as semver
+        if: github.ref_type == 'tag'
+        run: |
+          test "${{ steps.parse.outputs.is-valid }}" = "true" \
+            || { echo "::error::tag ${{ github.ref_name }} is not valid semver"; exit 1; }
+      - name: tag agrees with pyproject.toml
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          declared=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          tagged="${{ steps.parse.outputs.version }}"
+          echo "pyproject=$declared tag=$tagged"
+          [ "$declared" = "$tagged" ] || {
+            echo "::error::pyproject.toml declares $declared but the tag says $tagged"; exit 1; }
+
+  build:
+    name: build distributions
+    runs-on: ubuntu-latest
+    needs: [version-gate]
+    env:
+      UV_PROJECT_ENVIRONMENT: /tmp/l3io-venv-release-build
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.11.6"
+      - name: build
+        # --no-sources so a release cannot silently depend on a local path source
+        run: uv build --no-sources
+      - name: check metadata renders on PyPI
+        run: uvx twine check --strict dist/*
+      - name: no development source leaked into resolved dependency metadata
+        # ADR-0007 asserted that `uv build --no-sources` keeps development sources
+        # out of the published requirements. This checks it on the artifacts being
+        # shipped, for the wheel's METADATA and the sdist's PKG-INFO alike.
+        #
+        # DO NOT "simplify" this into a grep for a hostname over the whole file.
+        # Project-URL lines and the README long description legitimately contain
+        # github.com, so a file-wide search reports a leak on a completely clean
+        # artifact. Both sibling repositories hit that false positive. Only
+        # Requires-Dist lines can carry a dependency source, so only they are read.
+        #
+        # Scope note: this does NOT assert the sdist's own pyproject.toml is free of
+        # [tool.uv] configuration — it is not, and that is inert only because no
+        # installer honours it for a dependency. See ADR-0007.
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCHK'
+          import glob, io, sys, tarfile, zipfile
+
+          def requires(label, text):
+              reqs = [l for l in text.splitlines() if l.startswith("Requires-Dist:")]
+              print("%s:\n  %s" % (label, "\n  ".join(reqs) or "(none)"))
+              return reqs
+
+          found = []
+          wheel = glob.glob("dist/*.whl")[0]
+          z = zipfile.ZipFile(wheel)
+          found += requires(wheel, z.read(
+              next(n for n in z.namelist() if n.endswith(".dist-info/METADATA"))).decode())
+
+          for sd in glob.glob("dist/*.tar.gz"):
+              t = tarfile.open(sd)
+              name = next(n for n in t.getnames() if n.endswith("PKG-INFO"))
+              found += requires(sd, t.extractfile(name).read().decode())
+
+          MARKERS = ("git+", "@ git", "file://", "@ http://", "@ https://")
+          bad = [r for r in found if any(m in r for m in MARKERS)]
+          if bad:
+              sys.exit("development source leaked into Requires-Dist: %s" % bad)
+          print("clean: no development source in any Requires-Dist")
+          PYCHK
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  smoke:
+    # The release gate of AD-15, run before anything is published: the built
+    # artifact must install and import in a clean environment on every supported
+    # interpreter. A failure here stops the release rather than the user.
+    name: clean install · py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { name: dist, path: dist }
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.11.6"
+          python-version: ${{ matrix.python }}
+      - run: |
+          set -euo pipefail
+          uv run --isolated --no-project --python "${{ matrix.python }}" \
+                 --with "$(ls dist/*.whl)" \
+                 python -c "from l3io.wp import backup; print('import ok')"
+
+  namespace:
+    # AD-27 — the l3io.wp namespace is PEP 420 native. A distribution that ships
+    # an __init__.py at l3io/ or l3io/wp/ shadows the namespace and makes its
+    # siblings unimportable. Testing a distribution alone cannot catch this, so
+    # the check installs all three together in one interpreter.
+    name: namespace coexistence
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { name: dist, path: dist }
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.11.6"
+      - name: three distributions, one interpreter
+        run: |
+          set -euo pipefail
+          uv run --isolated --no-project \
+                 --with "$(ls dist/*.whl)" \
+                 --with l3io-wp-config --with l3io-wp-database \
+                 python - <<'PY'
+          import importlib.util, pathlib, sys
+          import l3io, l3io.wp
+          for mod in ("l3io.wp.config", "l3io.wp.database", "l3io.wp.backup"):
+              assert importlib.util.find_spec(mod), f"AD-27 — {mod} not importable alongside its siblings"
+          for pkg in (l3io, l3io.wp):
+              d = pathlib.Path(list(pkg.__path__)[0])
+              assert not (d / "__init__.py").exists(), f"AD-27 — {d} ships __init__.py and shadows the namespace"
+          print("namespace ok:", list(l3io.wp.__path__))
+          PY
+
+  publish-testpypi:
+    name: publish to TestPyPI
+    runs-on: ubuntu-latest
+    needs: [smoke, namespace]
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/l3io-wp-backup
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { name: dist, path: dist }
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    name: publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [smoke, namespace]
+    # DELIBERATELY NOT tag-triggered. PyPI publication burns a filename
+    # permanently and cannot be undone, so it requires an explicit decision rather
+    # than arriving as a side effect of tagging. workflow_dispatch only.
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'pypi'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/l3io-wp-backup
+    permissions:
+      id-token: write   # trusted publishing — no long-lived token
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { name: dist, path: dist }
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  mirror-preflight:
+    # Reduces the mirror credentials to a boolean the next job can gate on.
+    #
+    # THIS JOB EXISTS BECAUSE `secrets` IS NOT AVAILABLE IN A JOB-LEVEL `if:`.
+    # Only `github`, `needs`, `vars` and `inputs` are. An expression such as
+    # `if: secrets.GITEA_TOKEN != ''` does not error — it evaluates empty and
+    # SILENTLY SKIPS the job, with nothing in the log saying why. A publish that
+    # quietly does not happen is worse than one that fails loudly. `secrets` IS
+    # available in a step's `env:`, which is what makes this workaround work.
+    name: mirror preflight
+    runs-on: ubuntu-latest
+    needs: [smoke, namespace]
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          MIRROR_URL: ${{ vars.PYPI_CUSTOM_URL }}
+          # GITEA_TOKEN, not PYPI_CUSTOM_PASSWORD: that pair is stale in the secret
+          # store — verified 401 against /api/v1/user while GITEA_TOKEN returns 200.
+          MIRROR_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MIRROR_URL}" ] && [ -n "${MIRROR_TOKEN}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            # ${VAR:+set} reports PRESENCE without echoing a value, so a skip is
+            # diagnosable from the log without leaking a credential.
+            echo "mirror not configured: url:${MIRROR_URL:+set} token:${MIRROR_TOKEN:+set}"
+          fi
+
+  publish-mirror:
+    # Optional internal Gitea package registry. Token auth, because a Gitea
+    # registry does not do trusted publishing. Skipped entirely when the vars
+    # and secrets are absent, so a fork or a clean clone is unaffected.
+    name: mirror to internal registry
+    runs-on: ubuntu-latest
+    needs: [smoke, namespace, mirror-preflight]
+    # The event/target clause is load-bearing and was MISSING: without it a
+    # `workflow_dispatch` with target=testpypi — a dry run — also pushed to the
+    # internal registry, publishing somewhere nobody chose.
+    if: >-
+      needs.mirror-preflight.outputs.enabled == 'true'
+      && (github.ref_type == 'tag'
+          || github.event_name == 'release'
+          || (github.event_name == 'workflow_dispatch' && inputs.target == 'mirror'))
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { name: dist, path: dist }
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.11.6"
+      - name: is this version already mirrored?
+        # `uv publish --check-url` does NOT give idempotency: the check URL is the
+        # authenticated simple index, the check does not receive the publish
+        # credentials, and uv falls through to uploading and 409s anyway. Verified
+        # by a sibling repo, not assumed.
+        #
+        # Name and version come from the WHEEL FILENAME, never pyproject.toml —
+        # this job downloads an artifact and never checks out the repo, so reading
+        # a repo file here fails on the first run. It is also the better source on
+        # the merits: the question is whether THESE artifacts are already present,
+        # not what the repo currently declares, and the two diverge the moment a
+        # version is bumped after a build.
+        id: mirrored
+        run: |
+          set -euo pipefail
+          wheel=$(basename "$(ls dist/*.whl | head -1)")
+          raw="${wheel%%-*}"; ver="$(echo "$wheel" | cut -d- -f2)"
+          # PEP 503 normalisation — the wheel says l3io_wp_backup, the API wants l3io-wp-backup
+          name="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[-_.]+/-/g')"
+          api="$(echo "${{ vars.PYPI_CUSTOM_URL }}" | sed 's#/api/packages/#/api/v1/packages/#')"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+                 -u "${{ vars.GITEA_USERNAME || github.actor }}:${{ secrets.GITEA_TOKEN }}" \
+                 "$api/$name/$ver" || echo "000")
+          echo "  $name $ver -> HTTP $code"
+          # Skip ONLY on an explicit 200. A 404 or a transport error publishes and
+          # lets the registry be the authority, rather than skipping on ambiguity.
+          # A non-Gitea index has no /api/v1/ equivalent, answers 404, and degrades
+          # to the previous behaviour.
+          [ "$code" = "200" ] && echo "skip=true" >> "$GITHUB_OUTPUT" || echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: upload
+        if: steps.mirrored.outputs.skip != 'true'
+        env:
+          UV_PUBLISH_URL: ${{ vars.PYPI_CUSTOM_URL }}
+          # Gitea's package registry takes basic auth with a TOKEN as the password.
+          # The PYPI_CUSTOM_* pair in the secret store is stale — verified 401
+          # against /api/v1/user, while GITEA_TOKEN returns 200. A stale credential
+          # presents as a workflow bug, so this reads the token directly.
+          UV_PUBLISH_USERNAME: ${{ vars.GITEA_USERNAME || github.actor }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.GITEA_TOKEN }}
+        run: uv publish dist/*
+
+  release:
+    # Created AFTER PyPI accepts, never before — a release pointing at a version
+    # that failed to publish is worse than no release.
+    name: create the release
+    runs-on: ubuntu-latest
+    needs: [version-gate, smoke, namespace, publish-pypi]
+    # Runs when PyPI succeeded OR was never attempted, never when it failed — a
+    # release pointing at a failed publish is worse than no release. `always()` is
+    # required: without it the condition is not evaluated at all once publish-pypi
+    # is skipped, which is the normal tag path.
+    # `github.event_name != 'release'` is required now that `release: published`
+    # is a trigger: on that event the release already exists, so creating it again
+    # fails the run. The tag-push path is unaffected.
+    if: >-
+      always() && github.ref_type == 'tag'
+      && github.event_name != 'release'
+      && needs.version-gate.result == 'success'
+      && needs.smoke.result == 'success'
+      && needs.namespace.result == 'success'
+      && (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with: { name: dist, path: dist }
+      - uses: LiquidLogicLabs/git-action-release@v2
+        with:
+          tag: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          artifacts: "dist/*"
+          generate-release-notes: true
