@@ -1,0 +1,15 @@
+# Project-local act configuration. Composes with ~/.actrc.
+# Globals (runner images, --bind, --artifact-server-path, credentials) come
+# from ~/.actrc; this file adds project-specific overrides only.
+#
+# `make act-init` bootstraps .act.{vars,env,secrets} from the .example files.
+# Without them act will refuse to start.
+#
+# -W pins act to ci.yml. publish.yml is deliberately excluded: act has no OIDC
+# and ignores job.permissions, so it cannot run the publish jobs meaningfully
+# and would fail in a way that looks like a workflow bug.
+
+--var-file .act.vars
+--env-file .act.env
+--secret-file .act.secrets
+-W .github/workflows/ci.yml

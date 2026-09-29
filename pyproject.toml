@@ -1,0 +1,257 @@
+[project]
+name = "l3io-wp-backup"
+version = "1.0.0"
+description = "WordPress backup, restore and relocation for automation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Shawn Anderson", email = "ravensorb@gmail.com" }]
+keywords = ["wordpress", "backup", "restore", "migration", "mysqldump", "wp-cli"]
+# ADR-0012 buys back the discoverability the namespace name gives up: the
+# classifiers and keywords carry the function the distribution name no longer does.
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: System Administrators",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: System :: Archiving :: Backup",
+  "Topic :: System :: Systems Administration",
+  "Typing :: Typed",
+]
+
+# Core stays PyPI-resolvable. `opentelemetry-api` is a hard dependency on purpose:
+# it is one transitive dependency and ~0.7MB, and already ships the no-op
+# ProxyTracer/NonRecordingSpan, so putting it behind an extra would oblige us to
+# hand-roll a shim (AD-24, ADR-0011).
+dependencies = [
+  "cryptography>=45,<51",
+  "structlog>=26.1,<27",
+  "opentelemetry-api>=1.40,<2",
+]
+
+[project.optional-dependencies]
+# Family-internal dependencies are extras, not core, for one reason: until every
+# package beneath this one is publicly resolvable, a hard dependency makes the
+# base install unresolvable in a clean environment — which is AD-15's gate
+# correctly refusing, not a CI defect. Matches the arrangement in
+# l3io-wp-database, which carries l3io-wp-config the same way.
+#
+# REVERT CONDITION: when l3io-wp-database is publicly resolvable from the index a
+# consumer uses, this moves back into `dependencies` and the base-install check
+# below stops forbidding it.
+database = ["l3io-wp-database>=1.0.0"]
+
+# AD-8 — an optional dependency is an optional import. Nothing here may be
+# imported at module scope; `verify-install` asserts a base install pulls none
+# of it, against the built wheel in an isolated environment.
+otel = [
+  "opentelemetry-sdk>=1.40,<2",
+  # AD-24: the umbrella `opentelemetry-exporter-otlp` is forbidden — it drags grpcio.
+  "opentelemetry-exporter-otlp-json-file>=0.65b0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ravensorb/py-wordpress-backup"
+Source = "https://github.com/ravensorb/py-wordpress-backup"
+Issues = "https://github.com/ravensorb/py-wordpress-backup/issues"
+
+[project.scripts]
+wpbackup2 = "l3io.wp.backup.cli:run_from_cli"
+
+# Development and CI arrangement only, and a deliberate choice over the Gitea
+# index l3io-wp-database will be staged to: that index requires credentials
+# (/simple/ returns 401 unauthenticated), so consuming it would mean every
+# developer and every CI runner needs secrets. The GitHub repository is public.
+# Pinned to a rev, never a branch — a branch re-resolves on every `uv lock -U`.
+# `uv build --no-sources` keeps this out of published metadata (ADR-0007).
+[tool.uv.sources]
+l3io-wp-database = { git = "https://github.com/ravensorb/py-wordpress-database.git", rev = "945069bf36329315f8c2536c8a272b33e1d6b7af" }
+
+[tool.uv]
+required-version = "==0.11.6"
+
+# PEP 735. `uv sync --dev` installs `dev`, which includes `test`.
+#
+# Trap 16: `uv run` syncs the DEFAULT groups only and PRUNES extras, so every
+# `uv run` after a `uv sync --all-extras` silently uninstalls the extra and any
+# test guarding it skips rather than runs. The optional dependencies are
+# therefore repeated in `dev`. Optionality is still enforced where it counts —
+# against the built wheel in an isolated environment, by `verify-install`.
+[dependency-groups]
+test = [
+  "pytest>=9.1.1,<10",
+  "pytest-cov>=7.1,<8",
+  # The AD-27 namespace test builds a wheel and an sdist with the project's own
+  # backend, in process, so it needs no network and no build-env resolution.
+  "hatchling>=1.32,<2",
+]
+dev = [
+  { include-group = "test" },
+  "ruff==0.16.7",
+  "mypy>=2.3.1,<3",
+  "import-linter>=2.15,<3",
+  "opentelemetry-sdk>=1.40,<2",
+  "opentelemetry-exporter-otlp-json-file>=0.65b0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# AD-27 — `packages` points at the namespace ROOT, and hatchling ships the
+# directories beneath it without synthesising `__init__.py` markers. There is no
+# `__init__.py` at src/l3io/ or src/l3io/wp/, and there never will be.
+[tool.hatch.build.targets.wheel]
+packages = ["src/l3io"]
+
+# Hatchling's default sdist would sweep in the vendored agent tooling. Name the
+# contents instead.
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/tools", "/docs", "/README.md", "/LICENSE"]
+
+# --------------------------------------------------------------------------
+# ruff
+# --------------------------------------------------------------------------
+[tool.ruff]
+# The agent tooling directories are vendored, not ours.
+extend-exclude = ["_bmad", "_bmad-output", ".claude", ".agents", ".bmad"]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "A",    # builtin shadowing
+  "ANN",  # annotations — the spine requires a full annotation on every public surface
+  "B",    # bugbear
+  "C4",   # comprehensions
+  "E",    # pycodestyle errors
+  "F",    # pyflakes
+  "I",    # import sorting
+  "PT",   # pytest style
+  "PTH",  # prefer pathlib over os.path
+  "RUF",
+  "S",    # bandit — this package shells out and handles credentials
+  "SIM",
+  "SLF",  # private member access
+  "TID",  # tidy imports
+  "UP",   # pyupgrade
+  "W",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, and the contract tests deliberately build hostile fixtures.
+"tests/**" = ["S101"]
+# The gates are scripts: they print their findings and read files by path.
+"tools/**" = ["S101"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+# --------------------------------------------------------------------------
+# mypy
+# --------------------------------------------------------------------------
+# AD-27: `mypy --strict` on a PEP 420 namespace package suggests adding the
+# `__init__.py` that breaks the sibling distributions. These three settings are
+# the alternative, and the suggestion is never to be taken.
+[tool.mypy]
+python_version = "3.11"
+strict = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "src"
+warn_unused_configs = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+# --------------------------------------------------------------------------
+# pytest
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "integration: needs a live database, WordPress or WP-CLI (spine: a small integration tier, marked and separable)",
+]
+
+# --------------------------------------------------------------------------
+# coverage
+# --------------------------------------------------------------------------
+# No `fail_under` is set. A threshold over a skeleton with no behaviour in it
+# would be a number that passes for the wrong reason; it is set when there is
+# something to cover, and that is a Stage 2 decision rather than a default
+# inherited from now.
+[tool.coverage.run]
+source = ["l3io.wp.backup"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@overload",
+]
+
+# --------------------------------------------------------------------------
+# import-linter — AD-1, the module half
+# --------------------------------------------------------------------------
+# This covers what import-linter can see: module imports and the inward-facing
+# layer rule. It CANNOT see builtins, so `open()`, a clock read through a
+# re-export and RNG reads are outside its reach entirely — `tools/check_purity.py`
+# carries those, and says so where it lives.
+[tool.importlinter]
+root_packages = ["l3io.wp.backup"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "AD-1 — domain/ and core/ import no I/O module"
+type = "forbidden"
+source_modules = ["l3io.wp.backup.domain", "l3io.wp.backup.core"]
+forbidden_modules = [
+  "boto3",
+  "cryptography",
+  "gzip",
+  "io",
+  "opentelemetry",
+  "os",
+  "pymysql",
+  "shutil",
+  "socket",
+  "sqlite3",
+  "structlog",
+  "subprocess",
+  "tarfile",
+  "tempfile",
+  "urllib",
+  "zipfile",
+]
+
+[[tool.importlinter.contracts]]
+name = "AD-1 — the pure layers never face outward"
+type = "forbidden"
+source_modules = ["l3io.wp.backup.domain", "l3io.wp.backup.core"]
+forbidden_modules = [
+  "l3io.wp.backup.adapters",
+  "l3io.wp.backup.api",
+  "l3io.wp.backup.cli",
+  "l3io.wp.backup.ports",
+]
+
+[[tool.importlinter.contracts]]
+name = "AD-1 — layers run inward only"
+type = "layers"
+layers = [
+  "l3io.wp.backup.cli : l3io.wp.backup.api",
+  "l3io.wp.backup.adapters",
+  "l3io.wp.backup.ports",
+  "l3io.wp.backup.core",
+  "l3io.wp.backup.domain",
+]

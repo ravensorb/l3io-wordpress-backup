@@ -1,0 +1,14 @@
+# act variables — copy to .act.vars (make act-init) and adjust.
+
+# Marks the run as local. Workflows gate on vars.LOCAL_ACT, never env.ACT:
+# env.ACT does not work in a job-level `if:`, and Gitea's runners also set
+# ACT=true, which would make a real CI run mistake itself for a local one.
+LOCAL_ACT=1
+
+# DB_HOST is deliberately NOT set. act's default network is `host`, so a service
+# label fails DNS and the published port is on 127.0.0.1 — the workflow default,
+# and the same address GitHub's VM runner uses. Only set DB_HOST=db if you also
+# pass --network with a user-defined network.
+
+# Leave empty to skip the internal registry mirror job.
+PYPI_CUSTOM_URL=

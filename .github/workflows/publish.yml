@@ -220,7 +220,7 @@ jobs:
         with: { name: dist, path: dist }
       - uses: pypa/gh-action-pypi-publish@release/v1
 
-  mirror-preflight:
+  preflight:
     # Reduces the mirror credentials to a boolean the next job can gate on.
     #
     # THIS JOB EXISTS BECAUSE `secrets` IS NOT AVAILABLE IN A JOB-LEVEL `if:`.
@@ -258,12 +258,12 @@ jobs:
     # and secrets are absent, so a fork or a clean clone is unaffected.
     name: mirror to internal registry
     runs-on: ubuntu-latest
-    needs: [smoke, namespace, mirror-preflight]
+    needs: [smoke, namespace, preflight]
     # The event/target clause is load-bearing and was MISSING: without it a
     # `workflow_dispatch` with target=testpypi — a dry run — also pushed to the
     # internal registry, publishing somewhere nobody chose.
     if: >-
-      needs.mirror-preflight.outputs.enabled == 'true'
+      needs.preflight.outputs.enabled == 'true'
       && (github.ref_type == 'tag'
           || github.event_name == 'release'
           || (github.event_name == 'workflow_dispatch' && inputs.target == 'mirror'))

@@ -99,6 +99,35 @@ jobs:
       - name: AD-25 flag map is total
         run: uv run pytest tests/contracts/test_flag_map.py -q
 
+      # AD-27 -- the namespace guard, checked HERE and not only at publish time.
+      # This is a PEP 420 native namespace package: `src/l3io/` and `src/l3io/wp/`
+      # must contain no `__init__.py`, because one there shadows the namespace and
+      # makes the sibling distributions (l3io-wp-config, l3io-wp-database)
+      # unimportable alongside this one. Until now that was only checked in
+      # publish.yml, so a namespace break reached a release rather than the pull
+      # request that introduced it -- the worst possible moment to find it.
+      #
+      # `find` rather than trusting the import test: a marker file added anywhere
+      # above the area package fails here too, not only the one the test imports.
+      - name: AD-27 no namespace marker files
+        run: |
+          set -euo pipefail
+          # Assert the SCOPE before asserting the rule. Without this, `find` on a
+          # missing src/l3io writes to stderr, puts nothing on stdout, and the
+          # `grep -q .` below matches nothing -- so the guard REPORTS SUCCESS over
+          # an empty set. That is the vacuous-guard failure: the same passing step
+          # means "no marker files" in one tree and "no tree at all" in another,
+          # and the difference is invisible from the log.
+          if [ ! -d src/l3io ]; then
+            echo "::error::AD-27 -- src/l3io does not exist; this guard would pass vacuously"
+            exit 1
+          fi
+          if find src/l3io -maxdepth 2 -name '__init__.py' | grep -q .; then
+            echo "::error::AD-27 -- __init__.py above src/l3io/wp/backup/ shadows the namespace"
+            find src/l3io -maxdepth 2 -name '__init__.py'
+            exit 1
+          fi
+
   test:
     name: py${{ matrix.python }} · ${{ matrix.engine.name }}
     runs-on: ubuntu-latest
