@@ -16,4 +16,7 @@ from __future__ import annotations
 
 __all__ = ["__version__"]
 
-__version__ = "1.0.0"
+# Re-exported from _version, which reads installed distribution metadata. There
+# used to be a literal here AND one in pyproject.toml, with nothing comparing
+# them; the git tag is now the only source.
+from l3io.wp.backup._version import __version__

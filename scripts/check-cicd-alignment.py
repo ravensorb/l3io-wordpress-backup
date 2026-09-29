@@ -110,18 +110,17 @@ def check_namespace(ci_blob, pub_blob, is_ns, R):
                 "check outside a comment) -- the word alone is not a check")
 
 def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
-    """One version literal per distribution, and an assertion that the two ways agree.
+    """The git TAG is the version: no literal anywhere, and the vcs wiring intact.
 
-    Reported by py-wordpress-database: this family carried TWO hand-maintained
-    literals per repo (pyproject.toml and the module's __version__) with nothing
-    comparing them. They agreed by luck, so a tag would have gone green and proved
-    nothing -- and a version gate comparing the tag to pyproject.toml alone leaves
-    __version__ free to disagree with the value users see.
+    Shawn's ruling, after both the two-literal shape and the literal+dynamic shape
+    were implemented and rejected: if the tag is the version there is nothing to
+    keep in sync, so the agreement test a second literal needs is solving a problem
+    that should not exist.
 
-    PyPA states no preference among its three single-sourcing options but makes one
-    explicit recommendation: assert import_name.__version__ equals
-    importlib.metadata.version("dist-name").
-    https://packaging.python.org/en/latest/discussions/single-source-version/
+    The literal rule carves out a module that also reads importlib.metadata. Without
+    that carve-out it flags `_version.py`'s own "0.0.0+unknown" sentinel -- a sibling
+    session's first audit did exactly that and reported all three repos as carrying
+    literals, which is how a correct arrangement gets a rule switched off.
     """
     pyproject = repo / "pyproject.toml"
     if not pyproject.is_file():
@@ -130,41 +129,88 @@ def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
         import tomllib
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except Exception as e:
-        R("ver", f"pyproject.toml unreadable, so version single-sourcing was not checked: {e}")
+        R("ver", f"pyproject.toml unreadable, so version rules were not checked: {e}")
         return
+
     project = data.get("project", {})
-    static = "version" in project
-    dynamic = "version" in (project.get("dynamic") or [])
+    hatch = data.get("tool", {}).get("hatch", {}).get("version", {}) or {}
+    raw = hatch.get("raw-options", {}) or {}
 
-    # Count literals in the source tree too -- a static pyproject version is only
-    # half the problem; the pair is what drifts.
-    src_literals = sorted(
-        f.relative_to(repo).as_posix()
-        for f in repo.glob("src/**/*.py")
-        if re.search(r"^__version__\s*=", f.read_text(encoding="utf-8", errors="ignore"), re.M)
-    )
-    if static and src_literals:
-        R("ver", f"TWO version literals: pyproject.toml ({project['version']}) and "
-                 f"{', '.join(src_literals)} -- nothing forces them to agree")
-    elif static:
-        R("ver", "pyproject.toml carries a static version literal; prefer "
-                 'dynamic = ["version"] with [tool.hatch.version] so there is one source')
-    if dynamic and not data.get("tool", {}).get("hatch", {}).get("version"):
-        R("ver", 'pyproject.toml declares dynamic = ["version"] but no [tool.hatch.version] '
-                 "source -- the build has no version to read")
-    if len(src_literals) > 1:
-        R("ver", f"{len(src_literals)} __version__ literals in src/: {', '.join(src_literals)}")
+    if "version" in project:
+        R("ver", f'pyproject.toml carries a static version literal ({project["version"]}); '
+                 "the tag is the source")
+    if "version" not in (project.get("dynamic") or []):
+        R("ver", 'pyproject.toml does not declare dynamic = ["version"]')
+    if hatch.get("source") != "vcs":
+        R("ver", f'[tool.hatch.version] source is {hatch.get("source")!r}, expected "vcs" '
+                 "(a `path` source reads a literal again)")
+    if "hatch-vcs" not in str(data.get("build-system", {}).get("requires", [])):
+        R("ver", "build-system.requires does not include hatch-vcs")
+    if raw.get("local_scheme") != "no-local-version":
+        R("ver", "raw-options.local_scheme is not no-local-version -- a +g<sha> local "
+                 "segment is rejected by PyPI and most indexes")
+    cmd = str(raw.get("git_describe_command", ""))
+    if not re.search(r"--match\s+v\[0-9\]\*\.\[0-9\]\*\.\[0-9\]\*", cmd):
+        R("ver", "git_describe_command does not --match three-component v tags -- a "
+                 "two-component tag like v1.0 is read as the basis and guessed to "
+                 "1.1.devN, which sorts ABOVE 1.0.0")
 
-    # The PyPA agreement assertion must exist somewhere that runs.
-    if src_literals or dynamic:
-        blobs = [pub_blob]
-        for d in ("tests", "tools"):
-            for f in (repo / d).rglob("*.py") if (repo / d).is_dir() else []:
-                blobs.append(f.read_text(encoding="utf-8", errors="ignore"))
-        joined = strip_comments("\n".join(blobs))
-        if "importlib.metadata" not in joined and "importlib_metadata" not in joined:
-            R("ver", "nothing asserts __version__ == importlib.metadata.version(dist) -- "
-                     "PyPA's one explicit recommendation for single-sourcing")
+    # A literal is allowed only where metadata is also read.
+    offenders = []
+    for f in sorted((repo / "src").rglob("*.py")) if (repo / "src").is_dir() else []:
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if not re.search(r'^\s*__version__(\s*:\s*str)?\s*=\s*["\']', text, re.M):
+            continue
+        if "importlib.metadata" in text or "importlib_metadata" in text:
+            continue
+        offenders.append(f.relative_to(repo).as_posix())
+    if offenders:
+        R("ver", f"version literal outside a metadata-reading module: {offenders}")
+
+
+def check_release_process(repo: pathlib.Path, R):
+    """release.yml, `make release`, and a changelog gate that runs BEFORE the tag.
+
+    Shawn's call is three hand-maintained copies of the workflow for now rather than
+    a shared workflow_call. That makes this checker the only thing preventing drift,
+    which is the whole reason these rules are mechanical and not a paragraph in a
+    README.
+    """
+    rel = repo / ".github" / "workflows" / "release.yml"
+    if not rel.is_file():
+        R("rel", "no .github/workflows/release.yml -- no single release path")
+        rel_blob = ""
+    else:
+        rel_blob = rel.read_text(encoding="utf-8")
+
+    mk = repo / "Makefile"
+    if not mk.is_file():
+        R("rel", "no Makefile")
+    else:
+        mk_text = mk.read_text(encoding="utf-8")
+        if not re.search(r"^release(-patch)?\s*:", mk_text, re.M):
+            R("rel", "Makefile has no `release` target (`make release patch`)")
+        if "release" in mk_text and "--untracked-files=no" not in mk_text:
+            R("rel", "the release guard does not pass --untracked-files=no; these repos "
+                     "permanently carry untracked BMad directories, so a bare "
+                     "`git status --porcelain` is never empty and would block every release")
+
+    cl = repo / "CHANGELOG.md"
+    if not cl.is_file():
+        R("rel", "no CHANGELOG.md, but the release extracts its notes from one")
+    else:
+        heads = re.findall(r"^## (.+)$", cl.read_text(encoding="utf-8"), re.M)
+        # `## [Unreleased]` is canonical Keep a Changelog, not a stray heading.
+        # Flagging it was this checker's fifth false positive, and the same shape as
+        # the others: a rule matching a pattern without the convention around it.
+        bad = [h for h in heads
+               if not re.match(r"\[(\d+\.\d+\.\d+|Unreleased)\]", h.strip(), re.I)]
+        if bad:
+            R("rel", f"CHANGELOG `## ` headings that are not Keep a Changelog versions "
+                     f"will be read as releases: {bad[:3]}")
+    if rel_blob and "changelog" not in rel_blob.lower():
+        R("rel", "release.yml does not check the changelog BEFORE creating the tag -- by "
+                 "the time publish.yml reads it the tag exists and the mirror has published")
 
 
 def check_publish(doc, R):
@@ -311,6 +357,7 @@ def main():
         is_ns = (repo/"src"/"l3io").is_dir()
         check_namespace(ci_blob, pub_blob, is_ns, R)
         check_version_single_source(repo, pub_blob, R)
+        check_release_process(repo, R)
 
         # tracked-in-git check: a workflow that is not committed never runs
         import subprocess

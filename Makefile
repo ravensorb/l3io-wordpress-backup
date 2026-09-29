@@ -115,3 +115,88 @@ ci-list: act-init secrets-check ## List the jobs act can see
 clean: ## Remove build and cache artifacts
 	rm -rf dist build .artifacts .uv-cache .pytest_cache .mypy_cache .ruff_cache
 	find . -name '__pycache__' -prune -exec rm -rf {} +
+
+
+# ---------------------------------------------------------------------------
+# Releasing
+#
+# These targets do NOT compute a version, build, or publish. They dispatch
+# release.yml and stop. The version is derived from the git tag by hatch-vcs
+# (AD-30), so anything that worked out a version locally would be a second
+# implementation of the one thing that must have exactly one.
+#
+# `make release patch` and `make release BUMP=patch` are the same command. The
+# bare words are no-op targets that exist only so make does not fail on the
+# second goal.
+# ---------------------------------------------------------------------------
+
+GH ?= gh
+RELEASE_WORKFLOW ?= release.yml
+RELEASE_BRANCH ?= main
+BUMP ?=
+
+_BUMP_WORDS := patch minor major dev
+_BUMP_GOAL := $(firstword $(filter $(_BUMP_WORDS),$(MAKECMDGOALS)))
+_BUMP := $(if $(BUMP),$(BUMP),$(_BUMP_GOAL))
+
+.PHONY: release release-patch release-minor release-major release-dev $(_BUMP_WORDS)
+
+release: ## Cut a release: make release patch|minor|major|dev
+	@set -eu; \
+	bump="$(_BUMP)"; \
+	if [ -z "$$bump" ]; then \
+	  echo "usage: make release patch|minor|major|dev   (or make release BUMP=patch)"; \
+	  exit 2; \
+	fi; \
+	case "$$bump" in patch|minor|major|dev) ;; *) echo "unknown bump '$$bump'"; exit 2 ;; esac; \
+	command -v $(GH) >/dev/null || { echo "gh is not installed"; exit 1; }; \
+	$(GH) auth status >/dev/null 2>&1 || { echo "gh is not authenticated: run 'gh auth login'"; exit 1; }; \
+	branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" != "$(RELEASE_BRANCH)" ]; then \
+	  echo "on '$$branch', not '$(RELEASE_BRANCH)' -- release.yml tags whatever it checks out"; exit 1; \
+	fi; \
+	if [ -n "$$(git status --porcelain --untracked-files=no)" ]; then \
+	  echo "tracked files are modified. That work is NOT in the release, and a dirty"; \
+	  echo "tree also makes a local build report a different version than the tag."; \
+	  git status --short --untracked-files=no; exit 1; \
+	fi; \
+	git fetch --quiet origin $(RELEASE_BRANCH); \
+	if [ "$$(git rev-parse HEAD)" != "$$(git rev-parse origin/$(RELEASE_BRANCH))" ]; then \
+	  echo "HEAD and origin/$(RELEASE_BRANCH) differ -- the workflow releases the PUSHED commit,"; \
+	  echo "so push or pull first. Local: $$(git rev-parse --short HEAD)  origin: $$(git rev-parse --short origin/$(RELEASE_BRANCH))"; \
+	  exit 1; \
+	fi; \
+	latest=$$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1); \
+	echo "  repo         $$($(GH) repo view --json nameWithOwner -q .nameWithOwner)"; \
+	echo "  commit       $$(git rev-parse --short HEAD)"; \
+	echo "  latest tag   $${latest:-<none: the first release will be v1.0.0>}"; \
+	echo "  changelog    $$(grep -m1 '^## \[' CHANGELOG.md 2>/dev/null || echo '<no Keep-a-Changelog entry found>')"; \
+	echo "  bump         $$bump"; \
+	if [ "$$bump" = "dev" ]; then \
+	  echo "  effect       publishes this commit to the internal mirror as <next patch>.dev<distance>; NO tag, NO GitHub release"; \
+	else \
+	  echo "  effect       pushes the next $$bump tag, which triggers build, smoke, mirror publish and a GitHub release"; \
+	fi; \
+	printf "\nType the bump to confirm: "; \
+	read -r reply; \
+	if [ "$$reply" != "$$bump" ]; then echo "aborted"; exit 1; fi; \
+	$(GH) workflow run $(RELEASE_WORKFLOW) --ref $(RELEASE_BRANCH) -f bump="$$bump"; \
+	echo; \
+	echo "dispatched. Watch it with:  $(GH) run watch \$$($(GH) run list --workflow $(RELEASE_WORKFLOW) --limit 1 --json databaseId -q '.[0].databaseId')"
+
+release-patch: ## Release a patch version (alias for: make release patch)
+	@$(MAKE) --no-print-directory release BUMP=patch
+
+release-minor: ## Release a minor version
+	@$(MAKE) --no-print-directory release BUMP=minor
+
+release-major: ## Release a major version
+	@$(MAKE) --no-print-directory release BUMP=major
+
+release-dev: ## Publish a dev build of this commit to the mirror (no tag)
+	@$(MAKE) --no-print-directory release BUMP=dev
+
+# Reached only as the second goal of `make release <word>`. On its own it is a
+# typo for the real target, so say so rather than silently succeeding.
+$(_BUMP_WORDS):
+	@case " $(MAKECMDGOALS) " in \

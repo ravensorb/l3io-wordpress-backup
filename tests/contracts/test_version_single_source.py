@@ -1,97 +1,98 @@
-"""The version is single-sourced, and the two ways to ask agree.
+"""The git tag is the version, and the arrangement that makes that true is intact.
 
-PyPA's single-source discussion lists three options and states no preference, but
-makes one explicit recommendation: test that ``import_name.__version__`` and
-``importlib.metadata.version("dist-name")`` report the same value.
-https://packaging.python.org/en/latest/discussions/single-source-version/
+There is no version literal in this distribution -- not in ``pyproject.toml``, not
+in the source. ``hatch-vcs`` resolves the tag at build time and
+``l3io.wp.backup._version`` reads it back out of installed metadata.
 
-This repo carried TWO hand-maintained literals -- ``pyproject.toml`` and
-``src/l3io/wp/backup/__init__.py`` -- with nothing comparing them. They agreed by
-luck, so a ``v1.0.0`` tag would have passed the version gate and proved nothing.
-``pyproject.toml`` is now ``dynamic = ["version"]`` with
-``[tool.hatch.version] path`` pointing at the module, so there is one literal and
-no second value to drift from.
+That makes the PyPA agreement test (``__version__`` vs
+``importlib.metadata.version``) close to vacuous here: with one source they cannot
+disagree. So these tests assert the **arrangement** instead, because the realistic
+regression is someone reintroducing a literal -- which hatchling accepts without
+complaint.
 
-These tests are the backstop for that arrangement being *removed*: the realistic
-regression is someone replacing ``dynamic`` with a literal again, which hatchling
-accepts without complaint. Verified by doing exactly that -- two of these tests
-fail on it.
-
-**What these tests do NOT prove, stated plainly.** Now that there is one literal,
-changing it changes both the attribute and the metadata together, so they cannot
-disagree: an attempt to drift them by editing the module produced a matching
-wheel and all tests passed. That is single-sourcing working, not a gap -- but it
-means ``test_attribute_and_metadata_agree`` is a regression guard for the
-arrangement, not a live invariant with a reachable violation. The reachable
-violations are the ones in the two structural tests.
+Every assertion below was attack-tested with a planted violation.
 """
 
 from __future__ import annotations
 
 import pathlib
+import re
 import tomllib
-from importlib.metadata import version as dist_version
 
 import pytest
 
 from l3io.wp import backup
 
-DIST = "l3io-wp-backup"
-PYPROJECT = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+PYPROJECT = ROOT / "pyproject.toml"
+DATA = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
 
 
-def test_attribute_and_metadata_agree() -> None:
-    """The PyPA-recommended assertion.
-
-    Compares the module attribute (a literal) against installed distribution
-    metadata (what the build backend resolved). Only these two together exercise
-    both mechanisms; comparing the literal to itself would pass vacuously.
-    """
-    assert backup.__version__ == dist_version(DIST)
-
-
-def test_pyproject_declares_version_dynamic() -> None:
-    """There is no second literal to drift from.
-
-    Asserted structurally rather than by comparing two values: if a literal comes
-    back, single-sourcing has been undone, and a comparison test would then start
-    passing again as soon as the two happened to match.
-    """
-    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-    project = data["project"]
+def test_version_is_dynamic_with_no_literal() -> None:
+    project = DATA["project"]
     assert "version" in project.get("dynamic", []), (
-        "pyproject.toml must declare version dynamic; a static `version = ...` "
-        "reintroduces the second literal this test exists to prevent"
+        'pyproject.toml must declare `dynamic = ["version"]`'
     )
     assert "version" not in project, (
-        "pyproject.toml carries a static version AND dynamic; hatchling rejects "
-        "this at build time, but fail here with a clearer reason"
+        "pyproject.toml carries a static version literal; the tag is the source"
     )
 
 
-def test_hatch_version_points_at_a_file_that_defines_version() -> None:
-    """The configured path exists and actually holds the literal.
+def test_version_source_is_vcs() -> None:
+    assert DATA["tool"]["hatch"]["version"]["source"] == "vcs", (
+        'hatch version source must be "vcs"; a `path` source reads a literal again'
+    )
 
-    Reachability, recorded honestly: a *wrong* path is caught by hatchling itself
-    at build time with `OSError: Error getting the version from source regex`, so
-    this test never sees that case in a normal run -- verified by pointing the
-    path at a nonexistent file. What it does catch is `[tool.hatch.version]` being
-    deleted entirely, which is half of the realistic regression below.
+
+def test_local_scheme_is_disabled() -> None:
+    """A +g<sha> local segment is rejected outright by PyPI and most indexes."""
+    raw = DATA["tool"]["hatch"]["version"]["raw-options"]
+    assert raw.get("local_scheme") == "no-local-version"
+
+
+def test_describe_command_matches_only_three_component_tags() -> None:
+    """The least obvious line in pyproject, and the likeliest to be cut as noise.
+
+    Without ``--match v[0-9]*.[0-9]*.[0-9]*`` a two-component tag such as ``v1.0``
+    is read as the basis and setuptools-scm guesses the next MINOR -- ``1.1.devN``,
+    which sorts ABOVE ``1.0.0`` in PEP 440 and would permanently outrank the real
+    release. A sibling repo had exactly that tag from 2018. This repo has no tags,
+    so the guard protects against the first two-component tag anyone pushes.
     """
-    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-    hatch_version = data.get("tool", {}).get("hatch", {}).get("version")
-    assert hatch_version is not None, (
-        "[tool.hatch.version] is missing; with `dynamic = [\"version\"]` the build "
-        "has no version source, and without dynamic there is a second literal again"
+    cmd = DATA["tool"]["hatch"]["version"]["raw-options"]["git_describe_command"]
+    assert "--match" in cmd, "git_describe_command must restrict the tag pattern"
+    assert re.search(r"--match\s+v\[0-9\]\*\.\[0-9\]\*\.\[0-9\]\*", cmd), (
+        f"--match must pin three components; got: {cmd}"
     )
-    rel = hatch_version["path"]
-    src = PYPROJECT.parent / rel
-    assert src.is_file(), f"[tool.hatch.version] path does not exist: {rel}"
-    text = src.read_text(encoding="utf-8")
-    assert "__version__" in text, f"{rel} defines no __version__ for hatchling to read"
 
 
-@pytest.mark.parametrize("bad", ["", "v1.0.0", "1.0", "latest"])
-def test_version_is_pep440_ish(bad: str) -> None:
-    """The real version is not one of the shapes that quietly break a publish."""
-    assert backup.__version__ != bad
+def test_no_version_literal_anywhere_in_src() -> None:
+    """A literal is allowed ONLY in a module that reads importlib.metadata.
+
+    The rule has to carve that out or it flags ``_version.py``'s own
+    ``0.0.0+unknown`` sentinel and gets switched off for crying wolf -- a sibling
+    session's first audit did exactly that and reported all three repos as
+    carrying literals.
+    """
+    offenders = []
+    for f in sorted((ROOT / "src").rglob("*.py")):
+        text = f.read_text(encoding="utf-8")
+        if not re.search(r'^\s*__version__(\s*:\s*str)?\s*=\s*["\']', text, re.M):
+            continue
+        if "importlib.metadata" in text:
+            continue  # reads metadata; the literal is a fallback sentinel
+        offenders.append(f.relative_to(ROOT).as_posix())
+    assert not offenders, f"version literal outside a metadata-reading module: {offenders}"
+
+
+def test_version_module_exposes_a_pep440_version() -> None:
+    assert isinstance(backup.__version__, str) and backup.__version__
+    assert not backup.__version__.startswith("v"), "a v prefix is a tag, not a version"
+
+
+@pytest.mark.parametrize("sentinel", ["0.0.0+unknown"])
+def test_sentinel_sorts_below_every_release(sentinel: str) -> None:
+    """Documents why the fallback is that value and not something friendlier."""
+    from packaging.version import Version
+
+    assert Version(sentinel) < Version("0.1.dev0")

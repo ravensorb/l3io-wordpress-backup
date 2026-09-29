@@ -1,0 +1,179 @@
+# Cutting a release: the one button.
+#
+#   gh workflow run release.yml -f bump=patch     ->  v1.0.0 -> v1.0.1
+#   gh workflow run release.yml -f bump=minor     ->  v1.0.0 -> v1.1.0
+#   gh workflow run release.yml -f bump=major     ->  v1.0.0 -> v2.0.0
+#   gh workflow run release.yml -f bump=dev       ->  publishes 1.0.1.devN, no tag
+#
+# This file only ever CREATES A TAG. Everything after that -- build, smoke,
+# mirror, GitHub release -- is publish.yml reacting to the tag, so there is one
+# release path and not two.
+#
+# The version is never written down anywhere. hatch-vcs derives it from the tag
+# at build time (AD-30), so the tag this workflow pushes IS the version that gets
+# published, and there is nothing to keep in sync.
+#
+# `dev` deliberately creates no tag. Every commit past a release tag already
+# builds as <next patch>.dev<commits since tag> -- that is setuptools-scm's
+# default behaviour, not something added here -- so a dev release is just
+# publishing the current commit. A v1.0.1.dev1 TAG would also have needed
+# PEP 440 semantics that the semver parser does not provide.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to increment
+        type: choice
+        options: [patch, minor, major, dev]
+        default: patch
+
+permissions: {}
+
+jobs:
+  tag:
+    name: ${{ inputs.bump }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the tag
+      actions: write    # dispatch publish.yml for a dev build
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+
+      # A dev build needs no version decision at all: the commit's distance from
+      # the last tag already determines it. Hand straight over to publish.yml,
+      # which is the only thing that publishes.
+      - name: dev build -- publish this commit to the mirror
+        if: inputs.bump == 'dev'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run publish.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref "${GITHUB_REF_NAME}" \
+            -f target=mirror
+          echo "::notice::dispatched a dev publish for ${GITHUB_SHA}; the version is derived from the commit distance"
+
+      - name: what is the latest release tag?
+        if: inputs.bump != 'dev'
+        id: latest
+        uses: LiquidLogicLabs/git-action-tag-info@v2.0.10
+        with:
+          tag-name: latest
+          # Three components only. This repo has no tags yet; three components only, so the
+          # FIRST two-component tag anyone pushes is never read as a release --
+          # pyproject's git_describe_command excludes it too, and the two must agree.
+          tag-format: "v*.*.*"
+
+      - name: parse it into components
+        if: inputs.bump != 'dev' && steps.latest.outputs.exists == 'true'
+        id: parsed
+        uses: LiquidLogicLabs/git-action-tag-validate-version@v2.1.8
+        with:
+          tag: ${{ steps.latest.outputs.name }}
+          version-type: semver
+
+      - name: compute the next version
+        if: inputs.bump != 'dev'
+        id: next
+        env:
+          BUMP: ${{ inputs.bump }}
+          HAS_TAG: ${{ steps.latest.outputs.exists }}
+          IS_VALID: ${{ steps.parsed.outputs.is-valid }}
+          LATEST: ${{ steps.latest.outputs.name }}
+          MAJOR: ${{ steps.parsed.outputs.major }}
+          MINOR: ${{ steps.parsed.outputs.minor }}
+          PATCH: ${{ steps.parsed.outputs.patch }}
+        run: |
+          set -euo pipefail
+
+          # No release tag yet: this is the first one. Stated explicitly rather
+          # than incrementing from an assumed 0.0.0, so the first release is a
+          # deliberate number and not an artefact of the arithmetic.
+          if [ "${HAS_TAG}" != "true" ]; then
+            echo "::notice::no v*.*.* tag exists yet; the first release is v1.0.0"
+            echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The parse must have succeeded. Without this the components below are
+          # empty strings, the arithmetic yields 1 or 0, and a bad tag silently
+          # becomes v1.0.0 -- overwriting the real release line.
+          if [ "${IS_VALID}" != "true" ]; then
+            echo "::error::could not parse ${LATEST} as semver"
+            exit 1
+          fi
+          for part in MAJOR MINOR PATCH; do
+            value="${!part}"
+            case "$value" in
+              ''|*[!0-9]*)
+                echo "::error::${LATEST} gave a non-numeric ${part}: '${value}'"
+                exit 1 ;;
+            esac
+          done
+
+          case "${BUMP}" in
+            patch) next="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            minor) next="${MAJOR}.$((MINOR + 1)).0" ;;
+            major) next="$((MAJOR + 1)).0.0" ;;
+            *) echo "::error::unknown bump '${BUMP}'"; exit 1 ;;
+          esac
+
+          echo "${LATEST} + ${BUMP} -> v${next}"
+          echo "version=${next}" >> "$GITHUB_OUTPUT"
+
+      - name: the tag must not already exist
+        if: inputs.bump != 'dev'
+        env:
+          NEXT: v${{ steps.next.outputs.version }}
+        run: |
+          set -euo pipefail
+          # A tag is immutable here by policy: publish.yml reacts to it, and the
+          # registry burns the filename. Refuse rather than move it.
+          if git rev-parse -q --verify "refs/tags/${NEXT}" >/dev/null; then
+            echo "::error::${NEXT} already exists"
+            exit 1
+          fi
+          echo "${NEXT} is free"
+
+      - name: the changelog must already describe this version
+        # Checked BEFORE the tag is created, deliberately. publish.yml also reads
+        # the changelog, but by then the tag exists and the mirror has published,
+        # so a missing entry would fail after the artifact was already pushed --
+        # and the tag would have to be deleted by hand. Here, a missing entry
+        # means no tag was ever created and there is nothing to undo.
+        if: inputs.bump != 'dev'
+        uses: LiquidLogicLabs/git-action-changelog-parser@v3.0.14
+        with:
+          path: CHANGELOG.md
+          version: ${{ steps.next.outputs.version }}
+          validation-level: error
+
+      - name: create the tag
+        if: inputs.bump != 'dev'
+        uses: LiquidLogicLabs/git-action-tag-create-update@v2.0.11
+        with:
+          tag-name: v${{ steps.next.outputs.version }}
+          tag-message: |
+            l3io-wp-backup v${{ steps.next.outputs.version }}
+
+            ${{ inputs.bump }} release from ${{ github.sha }}.
+          # Never move an existing tag: publish.yml has already reacted to it and
+          # the registry filename is spent.
+          update-existing: 'false'
+          force: 'false'
+
+      - name: summary
+        if: inputs.bump != 'dev'
+        run: |
+          {
+            echo "### Tagged v${{ steps.next.outputs.version }}"
+            echo
+            echo "\`${{ steps.latest.outputs.name }}\` + **${{ inputs.bump }}**"
+            echo
+            echo "Publish.yml is now building it; the version is derived from this tag."
+          } >> "$GITHUB_STEP_SUMMARY"

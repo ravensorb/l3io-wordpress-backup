@@ -96,12 +96,19 @@ test = [
   "pytest-cov>=7.1,<8",
   # The AD-27 namespace test builds a wheel and an sdist with the project's own
   # backend, in process, so it needs no network and no build-env resolution.
+  # hatch-vcs must be here too, not only in build-system.requires: an in-process
+  # hatchling cannot resolve `source = "vcs"` without it and fails with
+  # `UnknownPluginError: Unknown version source: vcs`. Switching the version
+  # source broke four namespace tests exactly this way.
   "hatchling>=1.32,<2",
+  "hatch-vcs>=0.5,<1",
   # tests/contracts/test_workflow_invariants.py parses .github/workflows/*.yml.
   # A real YAML parser, not a regex: rule 1, and the workflow files are exactly
   # the kind of input where a hand-rolled parser silently disagrees with the
   # runner's own (a single U+0085 once silenced fourteen CI jobs that way).
   "PyYAML>=6.0,<7",
+  # test_version_single_source compares PEP 440 ordering for the sentinel.
+  "packaging>=25.0",
 ]
 dev = [
   { include-group = "test" },
@@ -113,10 +120,37 @@ dev = [
 ]
 
 [tool.hatch.version]
-path = "src/l3io/wp/backup/__init__.py"
+# THE TAG IS THE VERSION. No literal in this file and none in the source, so
+# there is nothing to keep in sync -- a better answer than the agreement test a
+# second literal would need.
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+# Without this, a build off a non-tag commit carries a +g<sha> local segment,
+# which PyPI and most indexes reject outright.
+local_scheme = "no-local-version"
+# Restrict the tag search to THREE-component v tags.
+#
+# This repo has no tags at all, so the stale-tag trap that hit
+# py-wordpress-database -- a 2018 `v1.0` read as 1.1.dev39, which sorts ABOVE
+# 1.0.0 and would have permanently outranked the real release -- cannot fire
+# here yet. The guard is kept because it is the protection against the FIRST
+# two-component tag anyone pushes; an untagged tree falls back to 0.1.devN,
+# which sorts below everything. Wrong in the safe direction.
+#
+# `--dirty` has a consequence worth knowing, measured in a clone: at tag v1.0.0
+# a CLEAN tree builds 1.0.0 and a DIRTY tree builds 1.0.1.dev0. So a modified
+# working tree silently produces a dev version instead of the release. CI is
+# safe (fresh checkout), but a local build used to verify a release is not --
+# which is why `make release` must refuse on modified tracked files for
+# CORRECTNESS, not tidiness.
+#
+# tests/contracts/test_version_single_source.py asserts this line is present: it
+# is the least obvious line here and the likeliest to be deleted as noise.
+git_describe_command = "git describe --dirty --tags --long --match v[0-9]*.[0-9]*.[0-9]*"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 # AD-27 — `packages` points at the namespace ROOT, and hatchling ships the
