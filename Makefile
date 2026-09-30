@@ -35,6 +35,13 @@ ACT_FILES := .act.vars .act.env .act.secrets
 INFISICAL_ENV ?= local
 INFISICAL_RUN := infisical run --env=$(INFISICAL_ENV) \
                  $(if $(INFISICAL_PROJECT_ID),--projectId $(INFISICAL_PROJECT_ID),) --
+# Bare `-s NAME` entries in ~/.actrc that act prompts for. They only need to be
+# non-empty. GITHUB_TOKEN is deliberately NOT here: act uses it to fetch actions,
+# so a placeholder makes every dry-run leg fail for the wrong reason.
+ACT_PLACEHOLDER_SECRETS := PYPI_CUSTOM_USERNAME PYPI_CUSTOM_PASSWORD PYPI_TOKEN \
+                           PYPI_TEST_TOKEN GITEA_TOKEN DOCKERHUB_TOKEN \
+                           REGISTRY_PASSWORD NPM_REGISTRY_TOKEN
+
 ACT := $(INFISICAL_RUN) act
 
 .PHONY: help act-init infisical-init secrets-check lint format types test contracts verify-wheel ci ci-job ci-dryrun ci-list build clean
@@ -106,8 +113,52 @@ ci-job: act-init secrets-check ## Replay one job: make ci-job JOB=contracts
 	@test -n "$(JOB)" || { echo "usage: make ci-job JOB=<job-id>"; exit 2; }
 	$(ACT) push -j $(JOB)
 
-ci-dryrun: act-init secrets-check ## Parse and plan the workflow without executing it
-	$(ACT) push --dryrun
+ci-dryrun: ## Replay every publish/release leg as a dry run (no tags, no publishes)
+	@# Nine legs, declared in .github/act-dryrun-legs.json. The table is DATA so
+	@# tests/contracts/test_act_dryrun_legs.py can assert it is complete against the
+	@# workflows' own triggers and choice options -- a leg list inside this recipe
+	@# plus a test naming the expected legs would drift silently.
+	@#
+	@# WHY NINE AND NOT ONE. An act dry run resolves every `uses:` ref against the
+	@# remote, so it catches an action version that does not exist -- but it only
+	@# reaches the jobs the EVENT reaches, and a skipped job never has its refs
+	@# resolved. Measured here with a nonexistent ref planted in publish.yml's
+	@# release job: `workflow_dispatch target=testpypi` exits 0 and reports success;
+	@# a tag-push payload exits 1 and names the bad ref. One leg is a false green,
+	@# and it is false at the exact job where changelog-parser@v3.0.14 lived.
+	@#
+	@# --dryrun IS LOAD-BEARING, not tidiness. release.yml creates tags and
+	@# dispatches publishes; without the flag this target would do both from a
+	@# laptop. It is hardcoded here and must stay hardcoded.
+	@#
+	@# ci.yml is excluded: act SEGFAULTS on a dry run of it (nil pointer in
+	@# containerReference.GetHealth) because the `test` job declares a `db` service
+	@# a dry run never starts. Reproduced: SIGSEGV, exit 2. `make ci` runs it for real.
+	@#
+	@# GITHUB_TOKEN must be REAL -- act fetches actions with it, so a placeholder
+	@# makes every leg fail for the wrong reason. The other bare `-s NAME` entries in
+	@# ~/.actrc only need to be non-empty, or act prompts and dies with
+	@# "inappropriate ioctl for device".
+	@set -eu; \
+	command -v act >/dev/null || { echo "act is not installed"; exit 1; }; \
+	command -v $(GH) >/dev/null && $(GH) auth status >/dev/null 2>&1 \
+	  || { echo "gh must be authenticated: act needs a real GITHUB_TOKEN to fetch actions"; exit 1; }; \
+	export GITHUB_TOKEN="$$($(GH) auth token)"; \
+	for s in $(ACT_PLACEHOLDER_SECRETS); do export $$s=unused-by-this-repo; done; \
+	fail=0; n=0; \
+	while IFS=$$'\t' read -r wf event args; do \
+	  n=$$((n+1)); \
+	  printf '  %-13s %-18s %-24s ' "$$wf" "$$event" "$$args"; \
+	  if act "$$event" -W ".github/workflows/$$wf" --dryrun $$args >/tmp/act-leg.$$$$ 2>&1; then \
+	    echo "ok"; \
+	  else \
+	    echo "FAILED"; fail=$$((fail+1)); \
+	    grep -iE "couldn't find remote ref|Error:" /tmp/act-leg.$$$$ | head -3 | sed 's/^/      /'; \
+	  fi; \
+	  rm -f /tmp/act-leg.$$$$; \
+	done < <(uv run scripts/act-legs.py); \
+	echo "  $$(uv run scripts/act-legs.py | wc -l) legs run"
+
 
 ci-list: act-init secrets-check ## List the jobs act can see
 	$(ACT) push --list
@@ -129,6 +180,9 @@ clean: ## Remove build and cache artifacts
 # bare words are no-op targets that exist only so make does not fail on the
 # second goal.
 # ---------------------------------------------------------------------------
+
+# Process substitution in ci-dryrun needs bash; /bin/sh on this box is dash.
+SHELL := /bin/bash
 
 GH ?= gh
 RELEASE_WORKFLOW ?= release.yml

@@ -1,0 +1,12 @@
+{
+  "//": "A tag push, which is what publish.yml's release and mirror jobs are gated on. Without this payload act synthesises a branch push and those jobs are never reached -- so their action refs are never resolved and a dry run reports success over a smaller set than it appears to.",
+  "ref": "refs/tags/v1.0.0",
+  "ref_type": "tag",
+  "ref_name": "v1.0.0",
+  "repository": {
+    "full_name": "ravensorb/py-wordpress-backup",
+    "name": "py-wordpress-backup",
+    "default_branch": "main",
+    "owner": { "login": "ravensorb" }
+  }
+}

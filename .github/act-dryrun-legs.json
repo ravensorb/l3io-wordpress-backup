@@ -1,0 +1,18 @@
+{
+  "//": "Every leg `make ci-dryrun` replays. DATA, not a list inside the Makefile recipe, so tests/contracts/test_act_dryrun_legs.py can assert the table is COMPLETE against the workflows' own declared triggers and choice options. A leg table in the recipe plus a test hardcoding the expected legs would drift, and the drift would be silent.",
+  "//why": "A dry run only validates the jobs the EVENT REACHES, and a skipped job never has its `uses:` refs resolved. Measured here: workflow_dispatch target=testpypi exits 0 with a nonexistent ref planted in the release job, while a tag-push payload exits 1 and names it. One leg per event shape is the difference between a gate and a false green.",
+  "excluded": {
+    "ci.yml": "act SEGFAULTS on a dry run of this file -- nil pointer in containerReference.GetHealth -- because the `test` job declares a `db` service container that a dry run never starts. Reproduced here: SIGSEGV, exit 2. `make ci` runs it for real instead."
+  },
+  "legs": [
+    { "workflow": "release.yml", "event": "workflow_dispatch", "inputs": { "bump": "patch" } },
+    { "workflow": "release.yml", "event": "workflow_dispatch", "inputs": { "bump": "minor" } },
+    { "workflow": "release.yml", "event": "workflow_dispatch", "inputs": { "bump": "major" } },
+    { "workflow": "release.yml", "event": "workflow_dispatch", "inputs": { "bump": "dev" } },
+    { "workflow": "publish.yml", "event": "push",              "payload": ".github/act-events/tag-push.json" },
+    { "workflow": "publish.yml", "event": "release",            "payload": ".github/act-events/release-published.json" },
+    { "workflow": "publish.yml", "event": "workflow_dispatch", "inputs": { "target": "testpypi" } },
+    { "workflow": "publish.yml", "event": "workflow_dispatch", "inputs": { "target": "pypi" } },
+    { "workflow": "publish.yml", "event": "workflow_dispatch", "inputs": { "target": "mirror" } }
+  ]
+}

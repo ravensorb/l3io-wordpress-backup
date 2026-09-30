@@ -1,0 +1,14 @@
+{
+  "//": "A published release. publish.yml declares `release: types: [published]` so cutting a release is sufficient to mirror; this payload is the only way a dry run reaches that path.",
+  "action": "published",
+  "ref": "refs/tags/v1.0.0",
+  "ref_type": "tag",
+  "ref_name": "v1.0.0",
+  "release": { "tag_name": "v1.0.0", "name": "v1.0.0", "draft": false, "prerelease": false },
+  "repository": {
+    "full_name": "ravensorb/py-wordpress-backup",
+    "name": "py-wordpress-backup",
+    "default_branch": "main",
+    "owner": { "login": "ravensorb" }
+  }
+}
