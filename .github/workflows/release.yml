@@ -103,8 +103,25 @@ jobs:
           # than incrementing from an assumed 0.0.0, so the first release is a
           # deliberate number and not an artefact of the arithmetic.
           if [ "${HAS_TAG}" != "true" ]; then
-            echo "::notice::no v*.*.* tag exists yet; the first release is v1.0.0"
-            echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+            # v0.0.1, matching py-wordpress-database and py-wpconfigr, which both
+            # already start here. This repo was the only one still saying 1.0.0.
+            #
+            # 0.x is the honest signal. SemVer reads 1.0.0 as a promise that the
+            # public API is stable, and AD-22 states the opposite for the half that
+            # matters: the CLI surface is frozen, but "the Python API is explicitly
+            # not preserved -- it is redesigned freely". There is also almost
+            # nothing to be stable about yet -- 134 non-comment lines of src/,
+            # against 1042 in database and 555 in config.
+            #
+            # SPINE DIVERGENCE, recorded rather than silently contradicted: AD-22
+            # also says "the rewrite is a major version that says so". That was
+            # written when this package would publish 1.0.0 against a 0.2.21
+            # predecessor. Versions and packages now restart from scratch under a
+            # new distribution name, so there is no predecessor to major-bump from
+            # and the clause no longer has a referent. 1.0.0 is a `make release
+            # major` away whenever the API is worth promising.
+            echo "::notice::no v*.*.* tag exists yet; the first release is v0.0.1"
+            echo "version=0.0.1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 

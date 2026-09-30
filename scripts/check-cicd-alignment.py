@@ -238,6 +238,16 @@ def check_release_process(repo: pathlib.Path, R):
         mk_text = mk.read_text(encoding="utf-8")
         if not re.search(r"^release(-patch)?\s*:", mk_text, re.M):
             R("rel", "Makefile has no `release` target (`make release patch`)")
+        # GREP FOR THE MECHANISM, NOT THE LABEL. A sibling session audited all three
+        # repos with `grep '^ci-dryrun:'` and this repo matched -- because it had
+        # had a `ci-dryrun` target for a while, the old one-event `act push
+        # --dryrun` that segfaulted. The check asserted a target NAME, not the
+        # implementation behind it, and would have reported three greens over one
+        # working target.
+        if re.search(r"^ci-dryrun\s*:", mk_text, re.M) and "act-dryrun-legs" not in mk_text:
+            R("rel", "`ci-dryrun` exists but does not read .github/act-dryrun-legs.json -- "
+                     "a one-event dry run skips the jobs the event does not reach, so the "
+                     "action refs in those jobs are never resolved")
         if "release" in mk_text and "--untracked-files=no" not in mk_text:
             R("rel", "the release guard does not pass --untracked-files=no; these repos "
                      "permanently carry untracked BMad directories, so a bare "
@@ -442,6 +452,26 @@ def main():
         for area, msg in findings:
             print(f"  [{area}] {msg}")
         total += len(findings)
+
+    # CROSS-REPO: the first-release version must agree across the family.
+    # Reported after the sweep because it is a property of the SET, not of any one
+    # repo -- and this checker missed exactly that: two repos said v0.0.1 while a
+    # third still said v1.0.0, and every per-repo rule passed.
+    firsts: dict[str, str] = {}
+    for repo in repos:
+        rel = repo / ".github" / "workflows" / "release.yml"
+        if not rel.is_file():
+            continue
+        m = re.search(r"the first release is (v[0-9]+\.[0-9]+\.[0-9]+)",
+                      rel.read_text(encoding="utf-8"))
+        if m:
+            firsts[repo.name] = m.group(1)
+    if len(set(firsts.values())) > 1:
+        print("\n=== family (cross-repo) -- 1 finding(s)")
+        print(f"  [fam] the first-release version disagrees across the family: {firsts}. "
+              "These packages release together; a divergent starting version is a gap "
+              "no per-repo rule can see.")
+        total += 1
 
     print(f"\n{'-'*60}\n{len(repos)} repo(s) checked, {total} finding(s)")
     return 1 if total else 0
