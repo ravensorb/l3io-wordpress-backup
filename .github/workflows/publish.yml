@@ -551,6 +551,23 @@ jobs:
         with:
           mode: COMMIT
           to-tag: ${{ github.ref_name }}
+          # BOUND THE RANGE. With no prior release the builder walks back to the
+          # first commit, and this repo's history starts 2018-12-02: of 105
+          # commits, 84 predate Conventional Commits and read "Bug fixes" or
+          # "Bump version: 0.2.20 -> 0.2.21". @latest-release resolves to the
+          # most recent published release and falls back to the previous TAG,
+          # which is `baseline-pre-rewrite` at 01ee58c -- the last commit before
+          # the rewrite. So v1.0.0's notes cover the 21 rewrite commits, all of
+          # which conform, and every later release compares against its
+          # predecessor with no further intervention.
+          #
+          # That tag has no `v` prefix deliberately: it is invisible to
+          # git_describe_command's --match and to release.yml's tag-format, so it
+          # cannot become a version basis. Rewriting the 84 old subjects was the
+          # alternative and was rejected -- 43 of them are the upstream author's
+          # commits, and every SHA would change, including three already cited as
+          # recovery records in committed documents.
+          from-tag: '@latest-release'
           configuration: .github/changelog-config.json
           token: ${{ secrets.GITHUB_TOKEN }}
           fail-on-error: 'false'
