@@ -530,7 +530,7 @@ dependencies = [
 
 [package.optional-dependencies]
 database = [
-    { name = "l3io-wp-database" },
+    { name = "l3io-wordpress-database" },
 ]
 otel = [
     { name = "opentelemetry-exporter-otlp-json-file" },
@@ -563,7 +563,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=45,<51" },
-    { name = "l3io-wp-database", marker = "extra == 'database'", git = "https://github.com/ravensorb/py-wordpress-database.git?rev=945069bf36329315f8c2536c8a272b33e1d6b7af" },
+    { name = "l3io-wordpress-database", marker = "extra == 'database'", git = "https://github.com/ravensorb/py-wordpress-database.git?rev=f7966ce254d164b1b66084a40faa1449ce780489" },
     { name = "opentelemetry-api", specifier = ">=1.40,<2" },
     { name = "opentelemetry-exporter-otlp-json-file", marker = "extra == 'otel'", specifier = ">=0.65b0" },
     { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.40,<2" },
@@ -595,9 +595,9 @@ test = [
 ]
 
 [[package]]
-name = "l3io-wp-database"
-version = "1.0.0"
-source = { git = "https://github.com/ravensorb/py-wordpress-database.git?rev=945069bf36329315f8c2536c8a272b33e1d6b7af#945069bf36329315f8c2536c8a272b33e1d6b7af" }
+name = "l3io-wordpress-database"
+version = "0.0.2"
+source = { git = "https://github.com/ravensorb/py-wordpress-database.git?rev=f7966ce254d164b1b66084a40faa1449ce780489#f7966ce254d164b1b66084a40faa1449ce780489" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "pymysql", extra = ["rsa"] },
