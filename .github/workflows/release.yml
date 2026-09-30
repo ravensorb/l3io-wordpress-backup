@@ -196,6 +196,33 @@ jobs:
         with:
           tag: v${{ steps.next.outputs.version }}
 
+      # HAND THE NEW TAG TO publish.yml. Without this step release.yml created the
+      # tag, moved the floating tags, told the step summary "Publish.yml is now
+      # building it" -- and dispatched nothing.
+      #
+      # A tag created with GITHUB_TOKEN fires NO push event, which is deliberate
+      # on GitHub's side (it prevents workflow recursion) and is why nothing
+      # downstream noticed. So publish.yml's `on: push: tags` trigger cannot be
+      # relied on here; the dispatch is the only thing that connects the two.
+      # Confirmed independently by py-wpconfigr: their v0.0.2 has exactly one
+      # Publish run and its event is workflow_dispatch, never push.
+      #
+      # `ref:` is the NEW TAG, not the branch, so github.ref inside publish.yml is
+      # that tag and its tag-gated jobs -- smoke's tag check, publish-mirror,
+      # release -- actually apply. Dispatching at main would run publish.yml with
+      # no tag in scope and skip exactly the jobs a release needs.
+      #
+      # Runs AFTER the floating tags move, so a consumer following v<major> sees
+      # the new release rather than the previous one.
+      - name: hand the new tag to publish.yml
+        if: inputs.bump != 'dev'
+        uses: LiquidLogicLabs/git-action-trigger-workflow@v2
+        with:
+          workflow-name: Publish
+          ref: v${{ steps.next.outputs.version }}
+          inputs: '{"target": "mirror"}'
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: summary
         if: inputs.bump != 'dev'
         run: |
