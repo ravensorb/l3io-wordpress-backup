@@ -171,6 +171,54 @@ def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
 _REF_CACHE: dict[str, bool] = {}
 
 
+def check_release_dispatch(repo: pathlib.Path, R):
+    """release.yml must hand the new tag to publish.yml on the REAL-release path.
+
+    Reported by py-wpconfigr. This repo's release.yml had its only dispatch step
+    guarded `if: inputs.bump == 'dev'`, so `bump=patch|minor|major` created the
+    tag, moved the floating tags, wrote "Publish.yml is now building it" to the
+    step summary -- and dispatched nothing. A tag created with GITHUB_TOKEN fires
+    no push event either, so nothing downstream picked it up. It reported success
+    and published nothing, and had never misfired only because the repo has no v*
+    tags yet.
+
+    The nine act dry-run legs could not catch this: a dry run proves the steps
+    that EXIST run, and the defect is a step that does not exist. An absence is
+    invisible to a replay.
+
+    Reads the COMMITTED file: a sibling mid-edit is not a specification.
+    """
+    import subprocess as _s
+    r = _s.run(["git", "-C", str(repo), "show", "HEAD:.github/workflows/release.yml"],
+               capture_output=True, text=True)
+    if r.returncode != 0:
+        return  # absence is reported by check_release_process
+    try:
+        doc = yaml.safe_load(r.stdout)
+    except yaml.YAMLError as e:
+        R("disp", f"release.yml is not valid YAML at HEAD: {str(e).splitlines()[0]}")
+        return
+    steps = [s for j in (doc.get("jobs") or {}).values() for s in (j.get("steps") or [])]
+    dispatches = [
+        s for s in steps
+        if "trigger-workflow" in str(s.get("uses", ""))
+        or "workflow run" in str(s.get("run", ""))
+    ]
+    if not dispatches:
+        R("disp", "release.yml never dispatches publish.yml -- it creates a tag and "
+                  "nothing builds it (a tag created with GITHUB_TOKEN fires no push event)")
+        return
+    # At least one must be reachable when bump is NOT dev.
+    real = [s for s in dispatches
+            if "!= 'dev'" in str(s.get("if", "")).replace('"', "'")
+            or not s.get("if")]
+    if not real:
+        guards = [str(s.get("if")) for s in dispatches]
+        R("disp", "release.yml dispatches publish.yml ONLY on the dev path "
+                  f"({guards}) -- bump=patch|minor|major tags a release and publishes "
+                  "nothing, while the summary claims otherwise")
+
+
 def check_action_refs(repo: pathlib.Path, R, *, online: bool):
     """Every `uses:` ref must EXIST, and org actions must be pinned to a major.
 
@@ -436,6 +484,7 @@ def main():
         check_version_single_source(repo, pub_blob, R)
         check_release_process(repo, R)
         check_action_refs(repo, R, online=online)
+        check_release_dispatch(repo, R)
 
         # tracked-in-git check: a workflow that is not committed never runs
         import subprocess
