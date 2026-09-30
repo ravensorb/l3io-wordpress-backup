@@ -243,22 +243,32 @@ def check_release_process(repo: pathlib.Path, R):
                      "permanently carry untracked BMad directories, so a bare "
                      "`git status --porcelain` is never empty and would block every release")
 
-    cl = repo / "CHANGELOG.md"
-    if not cl.is_file():
-        R("rel", "no CHANGELOG.md, but the release extracts its notes from one")
-    else:
-        heads = re.findall(r"^## (.+)$", cl.read_text(encoding="utf-8"), re.M)
-        # `## [Unreleased]` is canonical Keep a Changelog, not a stray heading.
-        # Flagging it was this checker's fifth false positive, and the same shape as
-        # the others: a rule matching a pattern without the convention around it.
-        bad = [h for h in heads
-               if not re.match(r"\[(\d+\.\d+\.\d+|Unreleased)\]", h.strip(), re.I)]
-        if bad:
-            R("rel", f"CHANGELOG `## ` headings that are not Keep a Changelog versions "
-                     f"will be read as releases: {bad[:3]}")
-    if rel_blob and "changelog" not in rel_blob.lower():
-        R("rel", "release.yml does not check the changelog BEFORE creating the tag -- by "
-                 "the time publish.yml reads it the tag exists and the mirror has published")
+    # RELEASE NOTES COME FROM COMMIT MESSAGES, not a CHANGELOG.md.
+    #
+    # The hand-maintained file was dropped across all three repos: it needed a
+    # manual edit before every release, nothing kept `## [Unreleased]` or the
+    # link refs current, and commitizen was rejected for silently deleting 85
+    # lines of one repo's hand-written content. So the commit log is the single
+    # source and the org action builds the notes from it.
+    blobs = []
+    for name in ("release.yml", "publish.yml"):
+        f = repo / ".github" / "workflows" / name
+        if f.is_file():
+            blobs.append(f.read_text(encoding="utf-8"))
+    wf = "\n".join(blobs)
+
+    if "git-action-release-changelog-builder" not in wf:
+        R("rel", "nothing builds release notes from the commit log "
+                 "(git-action-release-changelog-builder)")
+    if "git-action-changelog-parser" in strip_comments(wf):
+        R("rel", "still uses git-action-changelog-parser, which READS a CHANGELOG.md -- "
+                 "the notes now come from commit messages")
+    if (repo / "CHANGELOG.md").is_file():
+        R("rel", "CHANGELOG.md still exists; release notes are built from commits, so a "
+                 "second hand-maintained source will drift from them")
+    if "git-action-release@" in wf and "outputs.changelog" not in wf:
+        R("rel", "the release step does not use the built notes as its body")
+
 
 
 def check_publish(doc, R):

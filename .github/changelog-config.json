@@ -1,0 +1,14 @@
+{
+  "//": "Release notes are built from COMMIT SUBJECTS by git-action-release-changelog-builder. The default commit_template is '- #{{TITLE}}', so only the subject line is used -- this repo's commit bodies run 40-70 lines and none of that reaches the notes. Categories match the Conventional Commits prefixes this repo already uses, so grouping is free. #{{UNCATEGORIZED}} is present deliberately: without it, entries matching no rule are DROPPED rather than listed, which would silently lose commits from a release.",
+  "template": "#{{CHANGELOG}}\n#{{UNCATEGORIZED}}",
+  "commit_template": "- #{{TITLE}}",
+  "empty_template": "- No changes recorded between these tags.",
+  "categories": [
+    { "title": "## Features",      "rules": [{ "pattern": "^feat(\\(.+\\))?!?:",     "on_property": "title", "flags": "gu" }] },
+    { "title": "## Fixes",         "rules": [{ "pattern": "^fix(\\(.+\\))?!?:",      "on_property": "title", "flags": "gu" }] },
+    { "title": "## Performance",   "rules": [{ "pattern": "^perf(\\(.+\\))?!?:",     "on_property": "title", "flags": "gu" }] },
+    { "title": "## Documentation", "rules": [{ "pattern": "^docs(\\(.+\\))?!?:",     "on_property": "title", "flags": "gu" }] },
+    { "title": "## Build and CI",  "rules": [{ "pattern": "^(build|ci)(\\(.+\\))?!?:", "on_property": "title", "flags": "gu" }] },
+    { "title": "## Maintenance",   "rules": [{ "pattern": "^(chore|refactor|test|style)(\\(.+\\))?!?:", "on_property": "title", "flags": "gu" }] }
+  ]
+}

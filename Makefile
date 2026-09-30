@@ -170,7 +170,6 @@ release: ## Cut a release: make release patch|minor|major|dev
 	echo "  repo         $$($(GH) repo view --json nameWithOwner -q .nameWithOwner)"; \
 	echo "  commit       $$(git rev-parse --short HEAD)"; \
 	echo "  latest tag   $${latest:-<none: the first release will be v1.0.0>}"; \
-	echo "  changelog    $$(grep -m1 '^## \[' CHANGELOG.md 2>/dev/null || echo '<no Keep-a-Changelog entry found>')"; \
 	echo "  bump         $$bump"; \
 	if [ "$$bump" = "dev" ]; then \
 	  echo "  effect       publishes this commit to the internal mirror as <next patch>.dev<distance>; NO tag, NO GitHub release"; \

@@ -497,6 +497,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The release job needs a CHECKOUT, which it did not have: the notes
+      # builder reads .github/changelog-config.json from the working tree, and a
+      # job that only downloads an artifact has no working tree. Same shape as a
+      # mirror job reading pyproject.toml with no checkout -- the config would
+      # simply be absent and the builder would fall back to its defaults, which
+      # is a silent downgrade rather than an error.
+      - uses: actions/checkout@v7
+        with:
+          # Required on every checkout in this repo: the version is read from git
+          # and a shallow clone silently versions the build 0.1.dev1. Asserted by
+          # tests/contracts/test_workflow_invariants.py.
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with: { name: dist, path: dist }
       # Resolve THE wheel once, asserting the set has exactly one member.
@@ -520,9 +532,37 @@ jobs:
           echo "WHEEL=${wheels[0]}" >> "$GITHUB_ENV"
           echo "resolved ${wheels[0]}"
 
+      # Release notes come from COMMIT MESSAGES, built by the org action. There is
+      # no CHANGELOG.md in this repo: a hand-maintained file needs a manual edit
+      # before every release and nothing kept it current, so the commit log is the
+      # single source for what changed.
+      #
+      # COMMIT mode rather than PR: this repo's history is direct commits to main,
+      # so a PR-based build would produce nothing.
+      #
+      # NOTE the action names. This is `git-action-release-changelog-builder`,
+      # which BUILDS notes and genuinely has a v3. The reader,
+      # `git-action-changelog-parser`, stops at v2 -- and a @v3.0.14 pin copied
+      # between the two is why every repo in this family had a release step that
+      # could not resolve its action.
+      - name: build the release notes from the commit log
+        id: notes
+        uses: LiquidLogicLabs/git-action-release-changelog-builder@v3
+        with:
+          mode: COMMIT
+          to-tag: ${{ github.ref_name }}
+          configuration: .github/changelog-config.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on-error: 'false'
+
       - uses: LiquidLogicLabs/git-action-release@v2
         with:
           tag: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           artifacts: "dist/*"
-          generate-release-notes: true
+          # The built notes, not GitHub's own generator: this one also speaks
+          # Gitea, so releasing to the self-hosted instance later needs no second
+          # implementation. Falls back to the platform generator when the build
+          # returned nothing, so a release is never bodyless.
+          body: ${{ steps.notes.outputs.changelog }}
+          generate-release-notes: ${{ steps.notes.outputs.changelog == '' }}
