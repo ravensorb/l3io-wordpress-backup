@@ -52,14 +52,22 @@ dependencies = [
 # REVERT CONDITION: when l3io-wp-database is publicly resolvable from the index a
 # consumer uses, this moves back into `dependencies` and the base-install check
 # below stops forbidding it.
-# NAME PENDING. The family distribution names are l3io-wordpress-*, and this
-# repo is now l3io-wordpress-backup. py-wordpress-database still DECLARES itself
-# `l3io-wp-database`, so that is the name that resolves; renaming this reference
-# ahead of them makes `uv lock` fail on a package-name mismatch rather than
-# anything useful. Change to l3io-wordpress-database when that repo does.
+# NAME PENDING, and the REV is the load-bearing half.
 #
-# The NAMESPACE is unaffected and stays l3io.wp.* for all three -- only the
-# distribution names changed.
+# py-wordpress-database's COMMITTED pyproject.toml still declares
+# `l3io-wp-database`. The new `l3io-wp-database` name is in its working
+# tree, uncommitted -- and uv resolves the name from the metadata AT THE PINNED
+# COMMIT, so renaming this line alone fails with:
+#
+#   Package metadata name `l3io-wp-database` does not match given name
+#   `l3io-wp-database`
+#
+# Change this name and the rev below TOGETHER, once their rename is committed and
+# pushed. A rev pinned before their rename carries the old name whatever this
+# line says.
+#
+# The NAMESPACE is unaffected: all three import as l3io.wp.* and only the
+# distribution names change. The two are independent (docs/adr/0012).
 database = ["l3io-wp-database>=0.0.1"]
 
 # AD-8 — an optional dependency is an optional import. Nothing here may be

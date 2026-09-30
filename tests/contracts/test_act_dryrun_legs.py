@@ -49,6 +49,27 @@ def test_the_table_exists_and_has_legs() -> None:
     assert _table()["legs"], "the leg table is empty; the tests below prove nothing"
 
 
+def test_there_are_workflows_to_compare_against() -> None:
+    """The OTHER half of the scope, and it was missing.
+
+    Two tests below are parametrised over ``WF_DIR.glob("*.yml")``. pytest treats
+    an empty parametrisation as a **SKIP**, not a failure, so with no workflow
+    files they vanish and the suite stays green -- and
+    ``test_every_workflow_is_either_covered_or_explicitly_excluded`` also passes,
+    because the unclassified set is empty too.
+
+    Demonstrated by moving the workflow files aside: 39 passed became 28 passed
+    with 4 skipped and, before this assertion existed here, nothing red. Eleven
+    tests disappeared and the count was the only signal. Reported by
+    py-wpconfigr, who lost ten the same way.
+    """
+    assert WF_DIR.is_dir(), f"{WF_DIR} does not exist"
+    assert list(WF_DIR.glob("*.yml")), (
+        "no workflow files, so the parametrised tests below would SKIP rather than "
+        "fail and the coverage tests would pass over an empty set"
+    )
+
+
 def test_every_workflow_is_either_covered_or_explicitly_excluded() -> None:
     """A workflow added later must be classified, not silently unvalidated."""
     table = _table()

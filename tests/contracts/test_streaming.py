@@ -35,6 +35,24 @@ RSS_BOUND_BYTES = 24 * MIB
 RSS_TEETH_BYTES = 48 * MIB
 
 
+def test_the_ports_directory_exists_and_has_modules() -> None:
+    """Scope assertion for everything below that reads PORTS.
+
+    PORTS is built from separate quoted path segments --
+    ``SRC / "l3io" / "wp" / "backup" / "ports"`` -- which a search-and-replace over
+    ``l3io/wp`` cannot reach. A namespace move would leave this pointing at a
+    directory that does not exist, and a check over an absent directory finds
+    nothing to complain about and passes.
+
+    py-wpconfigr hit exactly this during the distribution rename: their equivalent
+    constant silently pointed nowhere, ten parametrised tests collapsed to an empty
+    set, and pytest SKIPPED them. The suite stayed green and the collected-test
+    count was the only signal.
+    """
+    assert PORTS.is_dir(), f"AD-21 scope missing: {PORTS} does not exist"
+    assert list(PORTS.glob("*.py")), f"AD-21 scope empty: no modules under {PORTS}"
+
+
 def _peak_rss_bytes() -> int:
     """Peak RSS of this process. ``ru_maxrss`` is KiB on Linux, bytes on macOS."""
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss

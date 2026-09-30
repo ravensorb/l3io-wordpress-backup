@@ -56,3 +56,40 @@ Imports are a **PEP 420 native namespace** at `l3io.wp`. The discipline this dem
 - Negative: a stranger searching PyPI for "wordpress backup" will not find `l3io-wp-backup` by name — mitigated but not eliminated by keywords and the pointer packages. **This bears directly on SM-1**, whose target is three independent repositories importing the API within twelve months; if that metric fails, name discoverability is a candidate cause and should be examined before concluding the library positioning was wrong.
 - Negative: five distributions to publish instead of three, plus two pointer releases.
 - **Revisit when:** SM-1 reports at the twelve-month mark, or if a future `l3io` Python package makes the namespace discipline of AD-27 burdensome.
+
+## Amendment — 2026-09-29: the two columns are INDEPENDENT
+
+The distribution names changed; the namespace did not. The table above pairs
+`l3io-wp-<area>` with `l3io.wp.<area>`, which reads as a rule that the
+distribution name determines the import path. **It is not.** Current state:
+
+| Distribution | Imports as |
+| --- | --- |
+| `l3io-wordpress-config` | `l3io.wp.config` |
+| `l3io-wordpress-database` | `l3io.wp.database` |
+| `l3io-wordpress-backup` | `l3io.wp.backup` |
+
+**The namespace is `l3io.wp.*` and is shared, so no single repository can change
+it.** A distribution rename is local to one repo; a namespace change is not, and
+renaming one of three means the three share no namespace at all.
+
+That inference has now been made twice and acted on twice. `py-wpconfigr` read
+the distribution rename as a namespace move, renamed `src/l3io/wp` to
+`src/l3io/wordpress`, and broke AD-27 immediately — the coexistence check failed
+on both install shapes with `ModuleNotFoundError` for the sibling. This
+repository made the same inference an hour later and moved its own tree the same
+way, from reading that sibling's mid-change working tree as if it were the
+specification. Both reverted.
+
+So the original table did not merely hold stale values; its **shape** invited the
+error. Anyone updating it should keep the columns visibly independent.
+
+**Mechanically enforced** in `scripts/check-cicd-alignment.py`: a cross-repo rule
+asserts each distribution matches `l3io-wordpress-<area>` and each namespace root
+is `l3io/wp`, checked **separately** so neither is derived from the other. It
+reads each sibling's **committed** `pyproject.toml` rather than its working tree,
+because reading the working tree is what produced the second instance.
+
+Console scripts are unaffected and do not follow the distribution rename:
+`l3io-wordpress-backup` still ships `wpbackup2` per AD-22, which ADR-0007 records
+as the outward-compatibility exception to naming a script for its distribution.

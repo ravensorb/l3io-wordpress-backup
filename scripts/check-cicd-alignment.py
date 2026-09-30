@@ -453,6 +453,56 @@ def main():
             print(f"  [{area}] {msg}")
         total += len(findings)
 
+    # CROSS-REPO: distribution name and namespace, checked INDEPENDENTLY.
+    #
+    # The two are not derivable from each other and must not be treated as if they
+    # were. Distribution is `l3io-wordpress-<area>`; the import namespace is
+    # `l3io.wp.<area>`. ADR-0012's table originally listed them side by side in a
+    # way that reads as a derivation rule, and a sibling session acted on that
+    # inference during the rename -- moved src/l3io/wp to src/l3io/wordpress and
+    # broke AD-27 immediately, because renaming one of three means the three share
+    # no namespace at all. This repo made the same inference an hour later.
+    #
+    # The namespace is SHARED, so no single repo can change it alone. That is why
+    # this rule lives here, across the set, and not in the per-repo pass.
+    names: dict[str, str] = {}
+    namespaces: dict[str, str] = {}
+    for repo in repos:
+        # READ THE COMMITTED FILE, NOT THE WORKING TREE.
+        #
+        # This checker sweeps SIBLING repos, and a sibling is routinely mid-change.
+        # Reading their working tree reported py-wordpress-database as already
+        # renamed to l3io-wordpress-database while its committed pyproject still
+        # said l3io-wp-database -- so the family rule went green on a state no
+        # clone could see, and acting on it broke `uv lock`. Third instance of the
+        # same error in one session: a sibling's working tree is not a
+        # specification.
+        import subprocess as _s
+        r = _s.run(["git", "-C", str(repo), "show", "HEAD:pyproject.toml"],
+                   capture_output=True, text=True)
+        content = r.stdout if r.returncode == 0 else ""
+        if content:
+            m = re.search(r'^name = "([^"]+)"', content, re.M)
+            if m:
+                names[repo.name] = m.group(1)
+        areas = [d.name for d in (repo / "src" / "l3io").iterdir()
+                 if d.is_dir() and not d.name.startswith("__")] if (repo / "src" / "l3io").is_dir() else []
+        if areas:
+            namespaces[repo.name] = f"l3io/{areas[0]}"
+    fam = []
+    for r, n in sorted(names.items()):
+        if not re.fullmatch(r"l3io-wordpress-[a-z0-9-]+", n):
+            fam.append(f"{r}: distribution is {n!r}, expected l3io-wordpress-<area>")
+    for r, ns in sorted(namespaces.items()):
+        if ns != "l3io/wp":
+            fam.append(f"{r}: namespace root is {ns!r}, expected l3io/wp "
+                       f"(it is SHARED -- one repo cannot move it alone)")
+    if fam:
+        print(f"\n=== family (cross-repo) -- {len(fam)} finding(s)")
+        for f in fam:
+            print(f"  [fam] {f}")
+        total += len(fam)
+
     # CROSS-REPO: the first-release version must agree across the family.
     # Reported after the sweep because it is a property of the SET, not of any one
     # repo -- and this checker missed exactly that: two repos said v0.0.1 while a
