@@ -11,3 +11,16 @@ htmlcov
 # and untrack these; this repo had six committed, so a tool refresh showed up as
 # repo changes. Tool output does not belong in the release or in review.
 .github/agents/
+
+# act's real configuration, generated from the .example files by `make act-init`.
+# The .example versions are tracked; these are not. .act.secrets is the one that
+# holds credentials once populated.
+#
+# These entries were present as an UNCOMMITTED .gitignore change and were lost to
+# a `git reset --hard` during this session -- so for a while the file meant to
+# hold act's secrets was not ignored at all. Nothing leaked (all three have zero
+# commits in any branch, and .act.secrets was empty), but the protection was
+# absent and a later commit touched .gitignore without noticing the gap.
+.act.env
+.act.secrets
+.act.vars
