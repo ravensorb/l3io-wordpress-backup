@@ -171,7 +171,7 @@ jobs:
         with:
           tag-name: v${{ steps.next.outputs.version }}
           tag-message: |
-            l3io-wp-backup v${{ steps.next.outputs.version }}
+            l3io-wordpress-backup v${{ steps.next.outputs.version }}
 
             ${{ inputs.bump }} release from ${{ github.sha }}.
           # Never move an existing tag: publish.yml has already reacted to it and

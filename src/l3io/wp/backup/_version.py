@@ -25,6 +25,6 @@ __all__ = ["__version__"]
 _UNKNOWN = "0.0.0+unknown"
 
 try:
-    __version__: str = _dist_version("l3io-wp-backup")
+    __version__: str = _dist_version("l3io-wordpress-backup")
 except PackageNotFoundError:  # pragma: no cover - only when not installed
     __version__ = _UNKNOWN

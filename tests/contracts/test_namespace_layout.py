@@ -45,7 +45,7 @@ def test_no_package_marker_at_either_namespace_level_in_the_source_tree() -> Non
     ]
     assert offenders == [], (
         f"AD-27 — {offenders} shadow the PEP 420 namespace and make "
-        f"l3io-wp-config and l3io-wp-database unimportable alongside this one."
+        f"l3io-wordpress-config and l3io-wp-database unimportable alongside this one."
     )
 
 

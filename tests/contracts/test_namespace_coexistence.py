@@ -2,7 +2,7 @@
 
 AD-27's enforcement clause requires a **stub sibling**: a throwaway
 distribution claiming the same ``l3io.wp`` root, proving coexistence today
-rather than waiting for ``l3io-wp-config`` and ``l3io-wp-database`` to be
+rather than waiting for ``l3io-wordpress-config`` and ``l3io-wp-database`` to be
 installable beside this one.
 
 **Why this file exists separately from ``test_namespace_layout.py``, and why it

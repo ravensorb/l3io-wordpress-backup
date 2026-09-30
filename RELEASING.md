@@ -7,23 +7,23 @@ after the upstream package is live, so automating the chain would only automate
 guessing.
 
 ```
-l3io-wp-config  ->  l3io-wp-database  ->  l3io-wp-backup
+l3io-wordpress-config  ->  l3io-wp-database  ->  l3io-wordpress-backup
 ```
 
 All three share the PEP 420 namespace `l3io.wp` (ADR-0012, AD-27).
 
 | # | Distribution | Import | Repository |
 |---|--------------|--------|------------|
-| 1 | `l3io-wp-config` | `l3io.wp.config` | `py-wpconfigr` |
+| 1 | `l3io-wordpress-config` | `l3io.wp.config` | `py-wpconfigr` |
 | 2 | `l3io-wp-database` | `l3io.wp.database` | `py-wordpress-database` |
-| 3 | `l3io-wp-backup` | `l3io.wp.backup` | `py-wordpress-backup` |
+| 3 | `l3io-wordpress-backup` | `l3io.wp.backup` | `py-wordpress-backup` |
 
 ## The gate
 
 After each release, before starting the next:
 
 ```bash
-uv run --isolated --no-project --with l3io-wp-config==<ver> \
+uv run --isolated --no-project --with l3io-wordpress-config==<ver> \
        python -c "from l3io.wp import config; print('ok')"
 ```
 
@@ -33,7 +33,7 @@ resolve at all — that blind spot is what let the original outage ship, and thi
 ordering exists to close it.
 
 `l3io-wp-database` additionally must not pull `boto3` in a base install (AD-8).
-`l3io-wp-backup`'s release pipeline runs the cross-package namespace check
+`l3io-wordpress-backup`'s release pipeline runs the cross-package namespace check
 (AD-27): all three wheels installed into one interpreter, all three imported,
 and no `__init__.py` at either namespace level.
 

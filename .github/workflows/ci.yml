@@ -1,4 +1,4 @@
-# l3io-wp-backup CI.
+# l3io-wordpress-backup CI.
 #
 # Every mechanical gate the architecture spine relies on runs here, and every
 # job in this file also runs locally under nektos/act with no edits. Publishing
@@ -118,7 +118,7 @@ jobs:
       # AD-27 -- the namespace guard, checked HERE and not only at publish time.
       # This is a PEP 420 native namespace package: `src/l3io/` and `src/l3io/wp/`
       # must contain no `__init__.py`, because one there shadows the namespace and
-      # makes the sibling distributions (l3io-wp-config, l3io-wp-database)
+      # makes the sibling distributions (l3io-wordpress-config, l3io-wp-database)
       # unimportable alongside this one. Until now that was only checked in
       # publish.yml, so a namespace break reached a release rather than the pull
       # request that introduced it -- the worst possible moment to find it.

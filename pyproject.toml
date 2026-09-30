@@ -1,5 +1,5 @@
 [project]
-name = "l3io-wp-backup"
+name = "l3io-wordpress-backup"
 # ONE version literal for this distribution, at src/l3io/wp/backup/__init__.py.
 # It was two -- here and there -- with nothing comparing them, so the tag could
 # agree with pyproject while __version__ (which is in __all__, so it is the value
@@ -47,12 +47,20 @@ dependencies = [
 # package beneath this one is publicly resolvable, a hard dependency makes the
 # base install unresolvable in a clean environment — which is AD-15's gate
 # correctly refusing, not a CI defect. Matches the arrangement in
-# l3io-wp-database, which carries l3io-wp-config the same way.
+# l3io-wp-database, which carries l3io-wordpress-config the same way.
 #
 # REVERT CONDITION: when l3io-wp-database is publicly resolvable from the index a
 # consumer uses, this moves back into `dependencies` and the base-install check
 # below stops forbidding it.
-database = ["l3io-wp-database>=1.0.0"]
+# NAME PENDING. The family distribution names are l3io-wordpress-*, and this
+# repo is now l3io-wordpress-backup. py-wordpress-database still DECLARES itself
+# `l3io-wp-database`, so that is the name that resolves; renaming this reference
+# ahead of them makes `uv lock` fail on a package-name mismatch rather than
+# anything useful. Change to l3io-wordpress-database when that repo does.
+#
+# The NAMESPACE is unaffected and stays l3io.wp.* for all three -- only the
+# distribution names changed.
+database = ["l3io-wp-database>=0.0.1"]
 
 # AD-8 — an optional dependency is an optional import. Nothing here may be
 # imported at module scope; `verify-install` asserts a base install pulls none

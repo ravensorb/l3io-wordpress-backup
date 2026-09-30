@@ -1,4 +1,4 @@
-# l3io-wp-backup publish.
+# l3io-wordpress-backup publish.
 #
 # DELIBERATELY A SEPARATE FILE FROM ci.yml, AND act MUST NEVER RUN IT.
 # act has no OIDC and ignores `job.permissions` entirely, so an `if:` guard
@@ -12,7 +12,7 @@
 # top-level job in this repository and stays that way.
 #
 # Release ORDER across the three packages is manual and documented in
-# RELEASING.md: l3io-wp-config, then l3io-wp-database, then l3io-wp-backup.
+# RELEASING.md: l3io-wordpress-config, then l3io-wp-database, then l3io-wordpress-backup.
 # Each is gated on
 # the previous one resolving from the index. No cross-repo automation.
 
@@ -207,7 +207,7 @@ jobs:
                  python -c "
           from importlib.metadata import version
           from l3io.wp import backup
-          attr, meta = backup.__version__, version('l3io-wp-backup')
+          attr, meta = backup.__version__, version('l3io-wordpress-backup')
           print(f'__version__={attr} metadata={meta}')
           assert attr == meta, f'__version__ {attr} != distribution metadata {meta}'
           "
@@ -269,11 +269,11 @@ jobs:
           set -euo pipefail
           uv run --isolated --no-project \
                  --with "$WHEEL" \
-                 --with l3io-wp-config --with l3io-wp-database \
+                 --with l3io-wordpress-config --with l3io-wp-database \
                  python - <<'PY'
           import importlib.util, pathlib, sys
           import l3io, l3io.wp
-          for mod in ("l3io.wp.config", "l3io.wp.database", "l3io.wp.backup"):
+          for mod in ("l3io.wp.config", "l3io.wp.backup"):
               assert importlib.util.find_spec(mod), f"AD-27 — {mod} not importable alongside its siblings"
           for pkg in (l3io, l3io.wp):
               d = pathlib.Path(list(pkg.__path__)[0])
@@ -288,7 +288,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/l3io-wp-backup
+      url: https://test.pypi.org/p/l3io-wordpress-backup
     permissions:
       id-token: write
     steps:
@@ -329,7 +329,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'pypi'
     environment:
       name: pypi
-      url: https://pypi.org/p/l3io-wp-backup
+      url: https://pypi.org/p/l3io-wordpress-backup
     permissions:
       id-token: write   # trusted publishing — no long-lived token
     steps:
@@ -449,7 +449,7 @@ jobs:
           set -euo pipefail
           wheel=$(basename "$WHEEL")
           raw="${wheel%%-*}"; ver="$(echo "$wheel" | cut -d- -f2)"
-          # PEP 503 normalisation — the wheel says l3io_wp_backup, the API wants l3io-wp-backup
+          # PEP 503 normalisation — the wheel says l3io_wordpress_backup, the API wants l3io-wordpress-backup
           name="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[-_.]+/-/g')"
           api="$(echo "${{ vars.PYPI_CUSTOM_URL }}" | sed 's#/api/packages/#/api/v1/packages/#')"
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \

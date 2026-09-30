@@ -520,7 +520,7 @@ wheels = [
 ]
 
 [[package]]
-name = "l3io-wp-backup"
+name = "l3io-wordpress-backup"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },

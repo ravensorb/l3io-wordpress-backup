@@ -1,7 +1,7 @@
 """``l3io.wp.backup`` — WordPress backup, restore and relocation.
 
-This is the package root of the ``l3io-wp-backup`` distribution. ``l3io`` and
-``l3io.wp`` are a **PEP 420 native namespace** shared with ``l3io-wp-config``
+This is the package root of the ``l3io-wordpress-backup`` distribution. ``l3io`` and
+``l3io.wp`` are a **PEP 420 native namespace** shared with ``l3io-wordpress-config``
 and ``l3io-wp-database``; neither carries an ``__init__.py`` (AD-27), and
 ``tests/contracts/test_namespace_layout.py`` asserts that, in the source tree
 and in the built wheel.
