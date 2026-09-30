@@ -1,0 +1,12 @@
+{
+  "version": "3.2.1",
+  "generated_from": "skills/_shared/",
+  "files": {
+    "references/config-resolution.md": "7636a63b75d009634094be83a2a405c9e5df0a52ed1ccbe22a0dda3db0f5757b",
+    "scripts/pm-status.py": "a4248d7bdeb2b096aed5636de6c8bb22b7dda8d97fa3fd1eee0528956cc358c5",
+    "scripts/merge-config.py": "22f51eed631c64134d352c236917e0a98ec5b5fe5d0810394f4615905c6ef7dc",
+    "scripts/merge-help-csv.py": "44cae89d74a247395cc851970e28b65605e958efa04b632209f9bd5ecbc70d69",
+    "scripts/write-module-config.py": "fdc0e81cda51221599907b9023a096b0570e096b7d921fb0c1db2050afa7a80f",
+    "assets/module-setup.md": "c4ffc5f603867c37c28446600f4a0ff62d30f92a121aac595523b9da75c3cc9a"
+  }
+}

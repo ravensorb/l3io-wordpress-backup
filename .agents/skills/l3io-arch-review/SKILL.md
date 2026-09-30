@@ -1,6 +1,6 @@
 ---
 name: l3io-arch-review
-description: Engineering-standards architecture guardrails and review. Use when the user wants to apply best-practice engineering standards — separation of concerns, reuse, design-by-contract, testability, dependency/GA policy, unified correlated logging, documentation with diagrams, plus per-stack rules (Python uv/poetry, Node LTS, .NET self-contained, GitHub Actions) — at new-project design time, during an architectural review, or when recording a technology/architecture decision.
+description: Engineering-standards architecture guardrails and review. Use when the user wants to apply best-practice engineering standards — separation of concerns, reuse, design-by-contract, testability, dependency/GA policy, unified correlated logging, documentation with diagrams, plus per-stack rules (Python uv/poetry, Node LTS, .NET self-contained, GitHub Actions, Docker digest-pinning/SBOM, PowerShell 7 major-scoped, shell strict-mode) — at new-project design time, during an architectural review, or when recording a technology/architecture decision.
 ---
 
 # Architecture Standards & Review
@@ -44,9 +44,13 @@ explicitly passes `setup`, `configure`, or `install`.
    - Node.js (`package.json`) → `references/standards-nodejs.md`
    - .NET/C# (`*.csproj`, `*.sln`) → `references/standards-dotnet.md`
    - GitHub Actions (`.github/workflows/*`) → `references/standards-github-actions.md`
-   - Docker / PowerShell / shell → load the matching overlay if present (currently stubs).
+   - Docker / PowerShell / shell → load the matching overlay if present.
    When the user names a stack explicitly, honor that over auto-detection.
-3. **Pick the mode** from the user's intent (or ask if ambiguous):
+3. **Pick the mode** from the user's intent (or ask if ambiguous). The three words
+   `design`, `review` and `decision` name the modes directly — they are the `action`
+   values of this module's three `assets/module-help.csv` rows, so that is what bmad-help
+   hands a user who picks one from the menu. An argument that is not one of them is still
+   read as intent, never rejected:
 
 ### Mode A — Design guardrails (new project)
 
@@ -75,7 +79,7 @@ recommend, and **record an ADR** (`assets/adr-template.md`) at
 `{project-root}/docs/adr/NNNN-slug.md`, the one ADR home. When
 `{project-root}/_bmad/scripts/pm-status.py` exists, take the number from the l3io-pm
 register:
-`python3 {project-root}/_bmad/scripts/pm-status.py adr-reserve --state-root {implementation_artifacts}/state --epic n/a --slug {slug} --adr-dir {project-root}/docs/adr`
+`uv run {project-root}/_bmad/scripts/pm-status.py adr-reserve --state-root {implementation_artifacts}/state --epic n/a --slug {slug} --adr-dir {project-root}/docs/adr`
 prints it. Without l3io-pm there is no register, so use the highest number in `docs/adr/`
 plus one. That is safe only for a single writer, which is the only case without the
 register, and `adr-reserve` skips those numbers later. Fill `Epic:` (`n/a` outside an epic)
@@ -84,7 +88,7 @@ unrecorded.
 
 ## Wiring into core BMad (customization)
 
-This module is also designed to be wired **into** the core `bmad-architect` and
+This module is also designed to be wired **into** the core `bmad-architecture` and
 `bmad-code-review` skills so the standards apply automatically. `assets/customize-architect.md`
 documents the `bmad-customize` overlay to author in a consuming project. Offer to set it up.
 
