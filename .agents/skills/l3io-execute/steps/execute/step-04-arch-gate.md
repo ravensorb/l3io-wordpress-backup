@@ -2,14 +2,14 @@
 
 Communicate all responses in `{communication_language}`.
 
-Run a multi-reviewer architecture gate before any sprint executes. Skipped entirely for DOCS and CONFIG
-work types, or when l3io-arch-review is not installed (gate never partially skips — minimum one reviewer
+Run a multi-reviewer architecture gate before any sprint executes. Skipped entirely for the DOCS
+work type, or when l3io-arch-review is not installed (gate never partially skips — minimum one reviewer
 is required to run).
 
 ## 1. Gate eligibility check
 
 Skip this step entirely and output `Step 04 skipped — work_type: {work_type}` if:
-- `{work_type}` is `DOCS` or `CONFIG`
+- `{work_type}` is `DOCS`
 
 Check for l3io-arch-review installation against the installer's module manifest — not a
 config section, which an installed-but-unconfigured module does not have

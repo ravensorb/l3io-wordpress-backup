@@ -45,14 +45,15 @@ files, and a reviewer's cost is dominated by reading the project — inviting it
 that read twice for one pass's worth of context.
 
 **Check each phase's gating separately; they differ.** Per the matrix in
-`steps/shared/step-01-classify-work.md` §4, CONFIG work runs clean-release but skips
-adversarial, so this is not an unconditional merge — collapsing them would silently extend
-adversarial coverage to CONFIG:
+`steps/shared/step-01-classify-work.md` §4, CODE, MIXED and CONFIG all run both
+phases; only DOCS skips them. The merge is still conditional on `{skip_phases}` rather than
+unconditional — if the matrix ever suppresses one phase for a work type, collapsing them would
+silently extend the other's coverage to it:
 
 | In `{skip_phases}` | Do this |
 |---|---|
-| neither | **one** invocation, both scopes (CODE and MIXED) |
-| adversarial only | one invocation, `clean-release` scope alone (CONFIG) |
+| neither | **one** invocation, both scopes (CODE, MIXED and CONFIG) |
+| adversarial only | one invocation, `clean-release` scope alone (no work type does this today; the matrix may add one) |
 | both | run nothing (DOCS) |
 
 **Scope every reviewer to the diff and named sections — never the repository.** Pass the
@@ -136,7 +137,7 @@ CRITICAL/HIGH findings: block until resolved. LOW: defer to issues file.
 
 ## 5. UX review (skip if in skip_phases)
 
-If a UX reviewer is installed and the sprint has UI-facing stories:
+If a UX reviewer is installed and `{ui_facing_stories}` (from the execution context; empty if absent — do not re-derive) names a story in this sprint:
 ```bash
 for n in bmad-ux-review bmad-ux; do
   ls {project-root}/.claude/skills/$n/SKILL.md 2>/dev/null \

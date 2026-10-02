@@ -124,8 +124,8 @@ Spawn `{dev_agent}` with (a general subagent when `{dev_agent}` is `l3io-dev-imp
 - Sprint root: `{sprint_root}`
 - **The story's `Files in scope` block, verbatim** — under the story's `## Files in scope`
   heading, written at prep. Start here. Every story carries one on every work type:
-  `steps/sprint/step-02-story-prep.md` §3 is an unconditional pass that runs for `DOCS` and
-  `CONFIG` sprints too, which skip only the technical-AC gate. So if prep wrote none, say so
+  `steps/sprint/step-02-story-prep.md` §3 is an unconditional pass that runs for every work
+  type, `DOCS` and `CONFIG` included. So if prep wrote none, say so
   in your final line — that is a story-prep defect worth one line of report, on any work type.
   A block whose single line says the files are to be determined during implementation is a
   deliberate answer, not a missing block: take it at face value and scope the work yourself.
@@ -144,9 +144,9 @@ On completion, collect: files changed, the test commands run with their exit cod
 fix iterations attempted. Not a `tests_passing` boolean — §4 records the commands and
 `pm-status.py` derives the boolean; `set-field` refuses that field with exit 2.
 
-## 3. For each story: code review (CODE and MIXED only)
+## 3. For each story: code review (skipped for DOCS only)
 
-Skip if `{work_type}` is DOCS or CONFIG.
+Skip if `{work_type}` is DOCS. CODE, CONFIG and MIXED all run it: infrastructure code is where IAM, secret-handling and supply-chain defects live, and this is the per-story place the existing-library check is enforced.
 
 ```bash
 uv run {pm_status} dispatch --state-root {pm_state_root} --event open \

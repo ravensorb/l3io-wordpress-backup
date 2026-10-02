@@ -221,6 +221,13 @@ actual:
 # no `stories:` — E001-S01-*.yaml files are the list
 ```
 
+**Sprint status lifecycle:** `backlog → in-progress → review → done`. `review` means **every
+child story is at `review` and none has been closed** — the sprint's work is written and
+awaiting verdicts, as distinct from `in-progress`, where stories are still being produced.
+It is **optional**: an orchestrator may go `in-progress → done` directly, and nothing requires
+the intermediate state. The epic lifecycle has no `review` (`backlog → in-progress → done`) —
+an epic spans sprints that can be in different states, so it has no single meaning there.
+
 ```yaml
 # state/active/epic-001/sprint-01/E001-S01-003.yaml
 key: 'E001-S01-003'

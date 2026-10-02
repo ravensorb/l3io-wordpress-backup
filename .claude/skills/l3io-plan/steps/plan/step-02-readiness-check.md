@@ -71,12 +71,12 @@ For each story, evaluate the following checks:
 | Check | Green | Amber | Red |
 |-------|-------|-------|-----|
 | Classification | `classification` is `simple`, `standard`, or `complex` | — | Missing or unrecognized value |
-| Technical ACs | If `{work_type}` is CODE or MIXED: story file exists with non-empty "Acceptance Criteria" section containing technical details (interfaces, data model, error handling) | Story has only functional ACs (no technical details), **or the story document does not exist yet** | Story document exists but carries no AC section at all |
+| Technical ACs | If `{work_type}` is CODE, CONFIG or MIXED: story file exists with non-empty "Acceptance Criteria" section containing technical details (interfaces, data model, error handling) | Story has only functional ACs (no technical details), **or the story document does not exist yet** | Story document exists but carries no AC section at all |
 | Estimate block | `estimate` block present with at least `man_hours` or `man_hours_low` | **Absent** — `steps/shared/step-estimate.md` writes it later in this same run | — |
 | `depends_on` validity | All referenced keys exist in scope and are not `done` | — | Any key missing from any state file, or a cycle detected |
 | Sprint assignment | Story is assigned to a named sprint in its epic | — | Orphaned story (not in any sprint) |
 
-Technical ACs check only applies when `{work_type}` is CODE or MIXED. For DOCS and CONFIG, skip this check for all stories.
+Technical ACs check applies when `{work_type}` is CODE, CONFIG or MIXED. For DOCS only, skip this check for all stories. It must run for CONFIG: step 03 elaborates only the stories this check grades Amber, so skipping CONFIG here would leave `{readiness}` green and elaborate nothing for an infrastructure epic.
 
 **An absent story document is Amber, not Red, deliberately.** Red halts this step with `BLOCKED` and forbids loading the next one (§6) — and the next one, step 03, is exactly where §4 says "if the file does not yet exist at the given path, create it first" before enriching it. Grading a missing document Red therefore blocked the only step that could produce it, and left that create-it-first branch unreachable by any input: Amber requires a file to exist, so no story could ever arrive at it. Amber is the grade for a gap elaboration closes, and a missing document is one. A document that exists but carries no AC section stays Red — that is a story someone wrote and left empty, which is a content decision rather than a missing artifact.
 

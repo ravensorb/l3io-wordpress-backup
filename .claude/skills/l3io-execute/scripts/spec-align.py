@@ -396,6 +396,17 @@ DIMENSIONS = (
     "Existing-library check",
 )
 TAC_HEADING = "Technical acceptance criteria"
+# The two business-AC dimensions, in the order the enrichment prompt writes them
+# (steps/sprint/step-02-story-prep.md §2). check-docs check 13 compares this tuple with the
+# prompt's layout block; keep it a literal, one name per line.
+BUSINESS_DIMENSIONS = (
+    "Outcome",
+    "Non-goals",
+)
+BAC_HEADING = "Business acceptance criteria"
+# Dimensions exempt from the `Spec:` requirement: a negative scope statement has no spec
+# section to resolve against, and demanding `Spec: none — n/a` on every story is noise.
+NO_POINTER_DIMENSIONS = frozenset({"Non-goals"})
 SPEC_LINE_RE = re.compile(r"^\s*(?:[-*]\s+)?Spec:\s*(.*?)\s*$")
 NONE_RE = re.compile(r"^none\s*(?:—|--|-)\s*(\S.*)$", re.IGNORECASE)
 PTR_RE = re.compile(r"^([^\s#`]+\.md)#([^\s#`]+)$")
@@ -403,8 +414,10 @@ NA_RE = re.compile(r"^\s*N/A\s*(?:—|--|-)\s*\S")
 
 
 def story_dimensions(text):
-    """(found, {casefolded dimension: (h3 line, [(lineno, line), ...])}) under the story's
-    `## Technical acceptance criteria`. Lines inside fenced or indented code are dropped."""
+    """({section: h2 found}, {section: {casefolded dimension: (h3 line, [(lineno, line), ...])}})
+    for the story's `## Business acceptance criteria` ("bac") and `## Technical acceptance
+    criteria` ("tac") sections. Dimensions are kept per section, so one placed under the wrong
+    h2 satisfies neither gate. Lines inside fenced or indented code are dropped."""
     tokens = md().parse(text)
     lines = text.splitlines()
     fenced = set()
@@ -413,18 +426,20 @@ def story_dimensions(text):
             fenced.update(range(t.map[0], t.map[1]))
     heads = [(t.map[0], int(t.tag[1:]), tokens[i + 1].content.strip())
              for i, t in enumerate(tokens) if t.type == "heading_open"]
-    tac = next((ln for ln, lvl, title in heads
-                if lvl == 2 and title.casefold() == TAC_HEADING.casefold()), None)
-    if tac is None:
-        return False, {}
-    tac_end = next((ln for ln, lvl, _ in heads if ln > tac and lvl <= 2), len(lines))
-    h3 = [(ln, title) for ln, lvl, title in heads if tac < ln < tac_end and lvl == 3]
-    dims = {}
-    for n, (ln, title) in enumerate(h3):
-        end = h3[n + 1][0] if n + 1 < len(h3) else tac_end
-        body = [(i + 1, lines[i]) for i in range(ln + 1, end) if i not in fenced]
-        dims[title.casefold()] = (ln + 1, body)
-    return True, dims
+    found, dims = {}, {"bac": {}, "tac": {}}
+    for key, heading in (("bac", BAC_HEADING), ("tac", TAC_HEADING)):
+        at = next((ln for ln, lvl, title in heads
+                   if lvl == 2 and title.casefold() == heading.casefold()), None)
+        found[key] = at is not None
+        if at is None:
+            continue
+        end = next((ln for ln, lvl, _ in heads if ln > at and lvl <= 2), len(lines))
+        h3 = [(ln, title) for ln, lvl, title in heads if at < ln < end and lvl == 3]
+        for n, (ln, title) in enumerate(h3):
+            stop = h3[n + 1][0] if n + 1 < len(h3) else end
+            body = [(i + 1, lines[i]) for i in range(ln + 1, stop) if i not in fenced]
+            dims[key][title.casefold()] = (ln + 1, body)
+    return found, dims
 
 
 def resolve_pointer(cat, value):
@@ -448,21 +463,19 @@ def story_pointers(text):
     """[(lineno, dimension, value)] for every Spec: line under a known dimension."""
     _found, dims = story_dimensions(text)
     out = []
-    for dim in DIMENSIONS:
-        for n, line in (dims.get(dim.casefold()) or (0, []))[1]:
-            m = SPEC_LINE_RE.match(line)
-            if m:
-                out.append((n, dim, m.group(1)))
+    for sect, names in (("tac", DIMENSIONS), ("bac", BUSINESS_DIMENSIONS)):
+        for dim in names:
+            for n, line in (dims[sect].get(dim.casefold()) or (0, []))[1]:
+                m = SPEC_LINE_RE.match(line)
+                if m:
+                    out.append((n, dim, m.group(1)))
     return out
 
 
-def check_story(cat, text):
-    """None when the story has no AC section (pre-provenance), else a list of problems."""
-    found, dims = story_dimensions(text)
-    if not found:
-        return None
+def _check_dimensions(cat, dims, names):
+    """[(lineno, message)] for one section's dimension tuple."""
     errs = []
-    for dim in DIMENSIONS:
+    for dim in names:
         d = dims.get(dim.casefold())
         if d is None:
             errs.append((0, f"{dim}: missing dimension (### {dim})"))
@@ -473,6 +486,8 @@ def check_story(cat, text):
             errs.append((h3_line, f"{dim}: empty"))
             continue
         if NA_RE.match(content[0][1]):
+            continue
+        if dim in NO_POINTER_DIMENSIONS:
             continue
         specs = [(n, SPEC_LINE_RE.match(line).group(1)) for n, line in content
                  if SPEC_LINE_RE.match(line)]
@@ -494,6 +509,16 @@ def check_story(cat, text):
     return errs
 
 
+def check_story(cat, text):
+    """(technical, business). technical is None when the story has no `## Technical acceptance
+    criteria` section (pre-provenance). business is None when it has no `## Business acceptance
+    criteria` section (pre-business) -- the caller decides whether that is fatal."""
+    found, dims = story_dimensions(text)
+    technical = _check_dimensions(cat, dims["tac"], DIMENSIONS) if found["tac"] else None
+    business = _check_dimensions(cat, dims["bac"], BUSINESS_DIMENSIONS) if found["bac"] else None
+    return technical, business
+
+
 def all_story_files(ctx):
     ctx.need("impl")
     return sorted(glob.glob(os.path.join(ctx.impl, "epic-*", "sprint-*", "stories", "*.md")))
@@ -502,7 +527,7 @@ def all_story_files(ctx):
 def cmd_check_pointers(ctx, a):
     cat = load_catalog(ctx)
     stories = all_story_files(ctx) if a.all else [ctx.abs(s) for s in a.story]
-    broken, pre = 0, []
+    broken, pre, pre_business = 0, [], []
     for s in stories:
         rel = ctx.rel(s)
         try:
@@ -511,25 +536,39 @@ def cmd_check_pointers(ctx, a):
             sys.stderr.write(f"{rel}: unreadable ({e})\n")
             broken += 1
             continue
-        errs = check_story(cat, text)
-        if errs is None:
+        technical, business = check_story(cat, text)
+        if technical is None:
             pre.append(rel)
             if not a.all:
                 sys.stderr.write(f"{rel}: pre-provenance: no '## {TAC_HEADING}' section -- "
                                  f"treat it as thin and enrich it\n")
                 broken += 1
             continue
+        errs = list(technical)
+        if business is None:
+            pre_business.append(rel)
+            msg = (f"{rel}: no '## {BAC_HEADING}' section -- "
+                   f"state the outcome this story serves and its non-goals\n")
+            if a.business == "required" and not a.all:
+                sys.stderr.write(msg)
+                broken += 1
+                continue
+            sys.stderr.write("INFO " + msg)
+        else:
+            errs += business
         for n, msg in errs:
             sys.stderr.write(f"{rel}:{n}: {msg}\n")
         broken += bool(errs)
     if a.all:
         for rel in pre:
             print(f"INFO pre-provenance: {rel}")
+        for rel in pre_business:
+            print(f"INFO pre-business: {rel}")
         if broken:
             print(f"check-pointers --all: {broken} story file(s) with broken pointers")
             return 1
         print(f"OK check-pointers --all: {len(stories)} story file(s), "
-              f"{len(pre)} pre-provenance")
+              f"{len(pre)} pre-provenance, {len(pre_business)} pre-business")
         return 0
     if broken:
         return 2
@@ -1620,6 +1659,9 @@ def build_parser():
     g.add_argument("--story", nargs="+", help="gate mode: exit 2 on any problem")
     g.add_argument("--all", action="store_true",
                    help="report mode over every story: exit 1 on broken pointers")
+    cp.add_argument("--business", choices=("required", "advisory"), default="advisory",
+                    help="required: a missing business AC section is an error (gate mode); "
+                         "advisory: reported on stderr only")
     cp.set_defaults(func=cmd_check_pointers)
 
     se = sub.add_parser("sections", help="the stories' pointers as de-duplicated line ranges")

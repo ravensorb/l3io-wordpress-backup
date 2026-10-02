@@ -35,7 +35,7 @@ Write retrospective report to `{implementation_artifacts}/epic-{epic_nnn}/epic-c
 
 ## 2. Architectural drift review
 
-Run only if `{work_type}` is CODE or MIXED AND `l3io-arch-review` is installed.
+Run unless `{work_type}` is DOCS, AND only if `l3io-arch-review` is installed.
 
 ```bash
 grep -qE "^[[:space:]]*-[[:space:]]*name:[[:space:]]*l3io-arch[[:space:]]*$" \
@@ -149,7 +149,7 @@ closure report. It does not block.
 
 ## 3. Epic security review
 
-Run only if `{work_type}` is CODE or MIXED AND `l3io-sec-redteam` is installed.
+Run unless `{work_type}` is DOCS, AND only if `l3io-sec-redteam` is installed.
 
 ```bash
 grep -qE "^[[:space:]]*-[[:space:]]*name:[[:space:]]*l3io-sec[[:space:]]*$" \

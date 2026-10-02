@@ -2,7 +2,7 @@
 
 Communicate all responses in `{communication_language}`.
 
-This step is **skipped** when `{work_type}` is DOCS or CONFIG (the SKILL.md router does not load it).
+This step runs for every work type. `{work_type}` selects the dimension **vocabulary** the enricher uses, not whether the step runs — see `references/ac-dimensions.md`.
 This step is a **no-op** when `{readiness}` is green (no technical AC gaps found).
 
 ---
@@ -76,27 +76,46 @@ than at invoice time. Planning spend sits outside the execution roll-up, so the 
 is for stall detection only — there is no bucket to attribute it to.
 
 Spawn `{enrich_agent}` with:
-- Every thin story file path in the batch. **For each path: if the file does not yet exist
-  at the given path, create it first** with this minimal skeleton (substituting the story's
-  `key` and `title` from its state YAML node), then enrich with technical ACs:
-  ```markdown
-  ---
-  key: '{story_key}'
-  title: '{story_title}'
-  status: backlog
-  classification: standard
-  ---
-
-  # {story_title}
-
-  ## Acceptance Criteria
-
-  <!-- Technical ACs to be added below -->
+- Every thin story file path in the batch. Before the spawn, make sure every story has a
+  document — `story-doc-init` creates a missing one from its state node and never touches an
+  existing one. Run it once per story:
+  ```bash
+  uv run {pm_status} story-doc-init --state-root {pm_state_root} \
+    --artifacts-root {implementation_artifacts} --story {story_key}
   ```
-- Instruction to add technical ACs to **each** story, covering: interface contracts, data
-  model changes, error handling and edge cases, observability requirements, security
-  considerations, testability (unit + integration test anchors) — treating each story on its
-  own terms rather than applying one answer across the batch
+- Instruction to enrich **each** story under exactly this layout, in this order, treating each
+  story on its own terms rather than applying one answer across the batch:
+
+## Business acceptance criteria
+
+### Outcome
+
+### Non-goals
+
+## Technical acceptance criteria
+
+### Interface contracts
+
+### Error and edge case handling
+
+### Observability requirements
+
+### Security considerations
+
+### Testability approach
+
+### Existing-library check
+
+*(End of layout — the spawn instructions continue below; they are directed at the enriching agent, not story content.)*
+
+- Tell the enriching agent, before writing technical ACs, to list the files the story will add or change, inspect their existing siblings, and record any convention a new file must follow.
+- Tell the enriching agent to load `{skill-root}/references/ac-dimensions.md` (the skill's `references/ac-dimensions.md`,
+  rooted so the agent can find it) for per-dimension guidance in this epic's vocabulary.
+  `spec_alignment` and `spec_paths` are `l3io-execute` keys only and `l3io-plan` passes no spec
+  index, so in plan mode `Spec: none — <reason>` is the expected answer for every applicable
+  dimension; only when `{spec_alignment}` is bound and true do you also pass the index path
+  and require resolving `Spec: <path>#<anchor>` lines. `Non-goals` takes no pointer. A
+  dimension that does not apply is marked `N/A — <reason>`, never omitted.
 - Context preamble: `epic_key: {epic_key}`, `work_type: {work_type}`, `skill: l3io-plan`
 - `{agent_contract}` (verbatim — see `steps/shared/step-00-digest.md`)
 
@@ -127,7 +146,7 @@ Stories failed: {failed_count}
 
 | Story | Result | Notes |
 |-------|--------|-------|
-| E001-S01-002 | ✅ Elaborated | Technical ACs added (interfaces, error handling, observability) |
+| E001-S01-002 | ✅ Elaborated | Business ACs (outcome, non-goals) and technical ACs (interfaces, error handling, observability) added |
 | E002-S01-001 | ❌ Failed | enrichment agent returned an error |
 ```
 

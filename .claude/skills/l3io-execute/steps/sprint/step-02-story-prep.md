@@ -2,14 +2,15 @@
 
 Communicate all responses in `{communication_language}`.
 
-Validate and prepare all stories in this sprint for development. Run the technical AC gate,
-write estimates, and mark stories ready-for-dev.
+Validate and prepare all stories in this sprint for development. Run the acceptance-criteria gate
+(business and technical ACs), write estimates, and mark stories ready-for-dev.
 
 ## 1. Gate eligibility
 
-Skip the technical AC gate (proceed to §3) if `{work_type}` is `DOCS` or `CONFIG`.
-Only §2 is skipped — §3 onward run for every work type, and §3 in particular is what
-gives a `DOCS`/`CONFIG` story its `Files in scope` block.
+The gate runs for `CODE`, `CONFIG` and `MIXED`, and is skipped for `DOCS` (the matrix in
+`steps/shared/step-01-classify-work.md` is the authority). `{work_type}` selects the dimension
+vocabulary through `references/ac-dimensions.md`. §3 onward run for every work type, and §3 in
+particular is what gives a `DOCS` story its `Files in scope` block.
 
 ## 2. Technical AC gate
 
@@ -25,10 +26,18 @@ For each story key in `{story_keys}`:
 
 Read story file at `{sprint_root}/stories/{story_key}.md`.
 
-Check the story against **every** dimension below. This is not an any-one-of check:
+Check the story against **every** dimension below, business and technical alike. This is not an any-one-of check. Two different questions are answered about the dimensions, and they have different answers:
+
+- **Which are enriched:** all of them, for every story, whatever `{business}` is. A story missing a business dimension is thin and is enriched.
+- **Which can block advancement:** every technical dimension always; the business dimensions (B1, B2) only when the story's `{business}` is `required`. For an `advisory` story a business dimension still missing or unresolved after enrichment is reported and the story proceeds to `ready-for-dev`.
+
+Authoring is unconditional and blocking is configurable: if "not required" also meant "not written", the setting would decay into business ACs that never exist anywhere.
+
 
 | # | Dimension | Satisfied when the story states… |
 |---|---|---|
+| B1 | **Outcome** | what a person or the business can do or rely on afterwards, in this epic's vocabulary |
+| B2 | **Non-goals** | what this story deliberately does not change |
 | 1 | Interface contracts | API signatures, data models, events the story adds or changes |
 | 2 | Error and edge case handling | what fails, how it fails, and what the caller sees |
 | 3 | Observability requirements | the logging, metrics or tracing the change must emit |
@@ -59,22 +68,46 @@ Apply the built-in checklist above. If `l3io-arch-review` is installed, also loa
 `l3io-arch-review/references/standards-core.md` (plus any overlay matching the story's stack)
 and hold the story to those standards as well.
 
+**Business-AC policy (every run, whatever `{spec_alignment}` is).**
+
+Bind `{business_ac_required}` from `modules.l3io-pm.business_ac_required`, default `"CODE,MIXED"`.
+Parse it as a comma-separated list, ignoring whitespace around entries and matching
+case-insensitively against `CODE`, `DOCS`, `CONFIG`, `MIXED`. An unrecognised entry **halts**
+with a message naming the value and the legal set — never drop it silently, because a typo would
+otherwise read as "advisory" and disable the gate exactly where someone meant to enable it.
+
+For each story, bind `{business}` = `required` when the story key is in `{ui_facing_stories}`
+(bound by `steps/shared/step-01-classify-work.md` and handed to you in the execution context
+block; an absent binding means the set is EMPTY — never re-derive it here, because UX review
+and this gate must not reach different answers about the same story), else `required` when `{work_type}` is in
+`{business_ac_required}`, else `advisory`.
+
 **Provenance (when `{spec_alignment}` is `true`).** Every applicable dimension must also name
 the spec section it came from. This is checked mechanically: no model is called, and a fresh
 index is not rewritten.
 
 ```bash
 {spec_align} build --if-stale
-{spec_align} check-pointers --story {one {sprint_root}/stories/{story_key}.md per key in {story_keys}}
+```
+
+Because `{business}` is per-story, split the invocation by resolved value rather than passing one
+flag for the whole sprint, omitting either line when its set is empty:
+
+```bash
+{spec_align} check-pointers --business required --story {each {sprint_root}/stories/{story_key}.md whose {business} is required}
+{spec_align} check-pointers --business advisory --story {each {sprint_root}/stories/{story_key}.md whose {business} is advisory}
 ```
 
 Bind `{spec_index_path}` = `{implementation_artifacts}/spec/spec-index.md`. Exit 0 → every
 story carries a resolving `Spec:` line on each applicable dimension. Exit 2 → every story it
 names on stderr fails this gate: a missing dimension, a missing or broken `Spec:` line, or no
-`## Technical acceptance criteria` section at all. Add those stories to `{thin_story_keys}`
-below, even if they passed the six-dimension check.
+`## Technical acceptance criteria` section at all. Under `--business required`, a missing
+`## Business acceptance criteria` section, a missing `Outcome` or `Non-goals`, or an
+unresolving `Outcome` pointer also fail. Under `--business advisory` those are reported on
+stderr and do not fail. Add the failing stories to `{thin_story_keys}` below, even if they
+passed the dimension check.
 
-**If technical ACs are missing (gate: "block" — always enforced):**
+**If any business or technical AC check failed (gate: "block" — always enforced):**
 
 Bind `{thin_story_keys}` = every story in `{story_keys}` that failed the check. If it is
 empty, go to §3.
@@ -120,18 +153,38 @@ span covers several.
 Two things for each story file listed below. Every file exists — the orchestrator created any
 missing one with `story-doc-init` before this spawn. Preserve all existing content.
 
-1. Enrich it with technical ACs under exactly this layout — all six `###` headings, in this
-   order. A dimension that genuinely does not apply is a paragraph starting
-   "N/A — <one-line reason>", never an omitted heading:
+1. Enrich it with business and technical ACs under exactly this layout — both `##` sections
+   and all eight `###` headings, in this order. Load `{execute_skill_root}/references/ac-dimensions.md` (`references/ac-dimensions.md` of the execute skill) for
+   per-dimension guidance in `work_type`'s vocabulary. A dimension that genuinely does not
+   apply is a paragraph starting "N/A — <one-line reason>", never an omitted heading:
+
+   ## Business acceptance criteria
+
+   ### Outcome
+
+   ### Non-goals
 
    ## Technical acceptance criteria
 
    ### Interface contracts
+
    ### Error and edge case handling
+
    ### Observability requirements
+
    ### Security considerations
+
    ### Testability approach
+
    ### Existing-library check
+
+   *(End of layout — the instructions continue below; they are directed at the enriching agent, not story content.)*
+
+   `Outcome` ends with a resolving `Spec:` line like the technical dimensions; `Non-goals`
+   takes no pointer.
+
+   Before writing technical ACs, list the files the story will add or change, inspect their
+   existing siblings, and record any convention a new file must follow.
 
    The existing-library check names the library or platform capability that covers this
    work, or states why none does and custom code is warranted. Do not propose hand-written
@@ -173,18 +226,21 @@ across their `actual` blocks (`references/metrics-contract.md` §6). The even sp
 approximation and is meant to be — the alternative is paying N project reads to measure a
 number that feeds calibration as a ratio, and prep cost does scale roughly with story count.
 
-After enrichment, re-check every key in `{thin_story_keys}` against all six dimensions — and,
-when `{spec_alignment}` is `true`, rerun `{spec_align} check-pointers --story …` over those
-story files (exit 2 is a failure). For any still carrying an unfilled applicable dimension or
-a failing pointer:
+After enrichment, re-check every key in `{thin_story_keys}` against every dimension — and,
+when `{spec_alignment}` is `true`, rerun the `check-pointers` split above over those
+story files (exit 2 is a failure). For any still carrying an unfilled applicable technical dimension, a failing pointer, or —
+only when its `{business}` is `required` — an unfilled business dimension:
 ```
-BLOCKED: story {story_key} still missing technical ACs after elaboration. Investigate manually.
+BLOCKED: story {story_key} still missing required acceptance criteria after elaboration. Investigate manually.
 ```
+
+For an `advisory` story whose business dimension is still unfilled, do not block: note it in
+the step output and continue.
 
 ## 3. Every story carries a `Files in scope` block
 
 **This runs on every path and for every work type** — for stories that were never thin, for
-stories §2 just enriched, and for `DOCS`/`CONFIG` sprints that skipped §2 altogether at §1.
+stories §2 just enriched, and for `DOCS` stories, which skip §2 and still get this block.
 It is the only step that guarantees the block exists, and `steps/sprint/step-03-dev-loop.md`
 §2 hands it to the dev agent unconditionally and reports a story-prep defect when it is
 missing. Anything less than "every story" here produces that defect report on the common
@@ -217,8 +273,7 @@ the repo-relative-paths and best-effort wording — with these story files, plus
 {one {sprint_root}/stories/{story_key}.md per line, for each key in {no_scope_keys}}
 ```
 
-Do **not** send instruction 1: these stories either passed the AC gate or were never subject
-to it, and re-enriching them would rewrite ACs nobody asked to change.
+Do **not** send instruction 1: these stories passed the AC gate, and re-enriching them would rewrite ACs nobody asked to change.
 
 If a story's scope genuinely cannot be determined — a spike, or work whose files are chosen
 during implementation — the agent still writes the heading and says so in one line under it

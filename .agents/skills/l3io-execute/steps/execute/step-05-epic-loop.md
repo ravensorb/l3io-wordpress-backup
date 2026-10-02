@@ -235,6 +235,7 @@ story_keys: [{story_keys}]
 sprint_num: {sprint_num}
 execute_skill_root: {skill-root}
 spec_alignment: {spec_alignment}
+ui_facing_stories: {ui_facing_stories}
 spec_align: uv run {skill-root}/scripts/spec-align.py --project-root {project-root} --planning-root {planning_artifacts} --impl-root {implementation_artifacts} --state-root {implementation_artifacts}/state --pm-status {project-root}/_bmad/scripts/pm-status.py --spec-paths '{spec_paths}'
 single_epic_phase: {single_epic_phase}
 headless: true
@@ -313,6 +314,7 @@ story_keys: [{story_key}]
 sprint_num: {sprint_num}
 execute_skill_root: {skill-root}
 spec_alignment: {spec_alignment}
+ui_facing_stories: {ui_facing_stories}
 spec_align: uv run {skill-root}/scripts/spec-align.py --project-root {project-root} --planning-root {planning_artifacts} --impl-root {implementation_artifacts} --state-root {implementation_artifacts}/state --pm-status {project-root}/_bmad/scripts/pm-status.py --spec-paths '{spec_paths}'
 single_epic_phase: {single_epic_phase}
 headless: true

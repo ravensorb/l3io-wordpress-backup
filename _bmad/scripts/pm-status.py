@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["ruamel.yaml>=0.18"]
 # ///
-# pm-status-version: 3.2.1   (machine-readable marker; `self-install` compares this across copies — keep at top)
+# pm-status-version: 3.2.2   (machine-readable marker; `self-install` compares this across copies — keep at top)
 """
 pm-status.py — deterministic, atomic, round-trip-safe writer for the l3io-pm
 sharded state tree, and the reader behind its progress report.
@@ -283,10 +283,10 @@ except ModuleNotFoundError:  # pragma: no cover - environment guard
     )
     sys.exit(2)
 
-PM_STATUS_VERSION = "3.2.1"  # keep in sync with the top-of-file `# pm-status-version:` marker
+PM_STATUS_VERSION = "3.2.2"  # keep in sync with the top-of-file `# pm-status-version:` marker
 
 VALID_STORY_STATUS = {"backlog", "ready-for-dev", "in-progress", "review", "done", "blocked"}
-VALID_SPRINT_STATUS = {"backlog", "in-progress", "done"}
+VALID_SPRINT_STATUS = {"backlog", "in-progress", "review", "done"}
 VALID_EPIC_STATUS = {"backlog", "in-progress", "done"}
 
 # Story transitions. Enforced per-story only; sprints and epics keep their existing

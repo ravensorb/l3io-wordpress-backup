@@ -74,6 +74,15 @@ Bind these at activation, applying the default when the key is absent:
 | `{model_prep}` | `modules.l3io-pm.model_prep` | `{model}` |
 | `{model_closure}` | `modules.l3io-pm.model_closure` | `{model}` |
 | `{token_rates_json}` | `modules.l3io-pm.token_rates`, **JSON-encoded** | empty — the shipped rate table applies unchanged |
+| `{business_ac_required}` | `modules.l3io-pm.business_ac_required` | `"CODE,MIXED"` |
+
+`{business_ac_required}` names the work types whose stories must carry a `## Business acceptance
+criteria` section for the story-prep gate to pass (`CODE`, `DOCS`, `CONFIG`, `MIXED`, comma-separated,
+case-insensitive, whitespace ignored; an unrecognised entry halts). It is a **scalar**, not an
+array, because the resolver merges scalars by override and arrays by append: an array could only
+ever be widened by a team overlay and never narrowed, so a project could not turn the requirement
+off for a type once any layer had added it. Its home is `modules.l3io-pm` rather than a per-skill
+`customize.toml` because `l3io-plan` enriches and `l3io-execute` gates, and the two must agree.
 
 **`{model}` and `{token_rates_json}` are what make cost a real number rather than a
 default.** Every `cost` in this system is derived from `tokens_k × the rate card for a
