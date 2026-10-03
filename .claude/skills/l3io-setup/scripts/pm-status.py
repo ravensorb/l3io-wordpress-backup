@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["ruamel.yaml>=0.18"]
 # ///
-# pm-status-version: 3.2.2   (machine-readable marker; `self-install` compares this across copies — keep at top)
+# pm-status-version: 3.2.4   (machine-readable marker; `self-install` compares this across copies — keep at top)
 """
 pm-status.py — deterministic, atomic, round-trip-safe writer for the l3io-pm
 sharded state tree, and the reader behind its progress report.
@@ -283,7 +283,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment guard
     )
     sys.exit(2)
 
-PM_STATUS_VERSION = "3.2.2"  # keep in sync with the top-of-file `# pm-status-version:` marker
+PM_STATUS_VERSION = "3.2.4"  # keep in sync with the top-of-file `# pm-status-version:` marker
 
 VALID_STORY_STATUS = {"backlog", "ready-for-dev", "in-progress", "review", "done", "blocked"}
 VALID_SPRINT_STATUS = {"backlog", "in-progress", "review", "done"}
@@ -893,9 +893,16 @@ def _event_keys(kind: str, args) -> dict:
     if kind == "story":
         epic_key, sprint_key, _ = parse_story_key(args.story)
         return {"node": "story", "key": args.story, "epic": epic_key, "sprint": sprint_key}
+    # Canonical, not raw. `_dispatch_identity` is (agent, epic, sprint, story), so a close
+    # spelled differently from its open never cancels it and the dispatch reports as
+    # permanently stalled in `report --stall-minutes`. Measured: open --epic 003 then close
+    # --epic E003 leaves 1 dispatch open. The story branch above already yields key form via
+    # parse_story_key; these two now match it instead of echoing the caller.
     if kind == "sprint":
-        return {"node": "sprint", "key": args.sprint, "epic": args.epic, "sprint": args.sprint}
-    return {"node": "epic", "key": args.epic, "epic": args.epic, "sprint": None}
+        sk = canonical_sprint_key(args.sprint)
+        return {"node": "sprint", "key": sk, "epic": canonical_epic_key(args.epic), "sprint": sk}
+    ek = canonical_epic_key(args.epic)
+    return {"node": "epic", "key": ek, "epic": ek, "sprint": None}
 
 
 # Fixed thresholds, in hours. Deliberately not configurable in this iteration: the
@@ -981,10 +988,16 @@ def cmd_dispatch(args) -> int:
                "event": "dispatch_open" if args.event == "open" else "dispatch_close",
                "agent": args.agent,
                "session": getattr(args, "session_id", None)}
+    # Canonical, not raw. This is the fifth write site of the same class and the one that
+    # matters: _dispatch_identity is (agent, epic, sprint, story), so an open and a close
+    # spelled differently are different dispatches and the close never cancels the open --
+    # the dispatch then reports as permanently stalled. --story is strict (a non-canonical
+    # key is rejected outright), so it passes through unchanged.
+    _canon = {"epic": canonical_epic_key, "sprint": canonical_sprint_key}
     for k in ("epic", "sprint", "story"):
         v = getattr(args, k, None)
         if v:
-            payload[k] = v
+            payload[k] = _canon[k](v) if k in _canon else v
     append_event(args.state_root, payload)
     sys.stdout.write(f"OK dispatch {args.event} {args.agent}\n")
     return 0
@@ -2969,7 +2982,7 @@ def cmd_adr_reserve(args) -> int:
             entry = CommentedMap()
             entry["number"] = n
             entry["slug"] = args.slug
-            entry["epic"] = args.epic
+            entry["epic"] = canonical_epic_key(args.epic)
             entry["reserved_at"] = _now_iso()
             reg.setdefault("reserved", []).append(entry)
         reg["next"] = start + args.count
@@ -6032,8 +6045,13 @@ def _append_issue(args) -> int:
             key = store.allocate(epic_norm)
         item = CommentedMap()
         item["key"] = key
-        item["epic"] = args.epic
-        item["sprint"] = args.sprint if args.sprint else ""
+        # epic_norm/sprint_norm, not args.*: both are computed at the top of this function
+        # and already trusted for the key, the --key cross-check, dedupe matching and
+        # store.allocate(). Storing the caller's spelling instead let one epic appear as
+        # '3', '03', '003', 'E3', 'E003' and 'e003' in one file -- all six accepted, all
+        # six producing the same correct key.
+        item["epic"] = epic_norm
+        item["sprint"] = sprint_norm
         item["title"] = args.title
         item["source"] = source_str
         if source_phase:
@@ -6792,14 +6810,76 @@ def _normalize_all_legacy(args) -> int:
     return 0
 
 
+def _normalize_keys(args) -> int:
+    """Rewrite every stored epic/sprint to its canonical form, wherever one is stored.
+
+    Fixes records written before the write sites normalised: --epic accepted '3', '03',
+    '003', 'E3', 'E003' and 'e003', all six produced the same correct key, and all six were
+    stored verbatim. One consuming project measured 116 bare-digit against 7 E-prefixed in
+    one file. No verb could repair them -- update-issue changes severity only and the other
+    repair actions do not touch these fields -- and hand-editing is forbidden by the state
+    contract, so they were simply stuck.
+
+    Whole-file by default with no --key, because unlike normalize-status there is no
+    per-item judgement: the canonical form of a key is not a decision. Two files, each kept
+    in the form it already uses (see canonical_epic_key): issues.yaml stores bare digits,
+    adr-register.yaml stores key form.
+    """
+    changed = {"issues": 0, "register": 0}
+    open_path = issues_paths(args.state_root)[0]
+    with issues_lock(open_path):
+        store = IssueStore(open_path)
+        for lst in (store.backlog, store.resolved):
+            for it in lst:
+                if not isinstance(it, dict):
+                    continue
+                for field, width in (("epic", 3), ("sprint", 2)):
+                    cur = it.get(field)
+                    if cur in (None, ""):
+                        continue
+                    want = _norm_num(cur, width)
+                    if str(cur) != want:
+                        it[field] = want
+                        changed["issues"] += 1
+        if changed["issues"]:
+            store.save_open()
+            store.save_resolved()
+
+    with adr_register_lock(args.state_root):
+        y, reg = load_adr_register(args.state_root)
+        for entry in reg.get("reserved") or []:
+            if not isinstance(entry, dict) or not entry.get("epic"):
+                continue
+            want = canonical_epic_key(entry["epic"])
+            if str(entry["epic"]) != want:
+                entry["epic"] = want
+                changed["register"] += 1
+        if changed["register"]:
+            _atomic_dump(y, reg, adr_register_path(args.state_root))
+
+    total = changed["issues"] + changed["register"]
+    if total == 0:
+        sys.stdout.write("OK normalize-keys: every stored epic/sprint is already canonical\n")
+        return 0
+    sys.stdout.write(
+        f"OK normalize-keys: {changed['issues']} field(s) in issues.yaml, "
+        f"{changed['register']} in adr-register.yaml\n")
+    return 0
+
+
 def _repair_issue(args) -> int:
     from ruamel.yaml.comments import CommentedMap
     if getattr(args, "all_legacy", False):
         if args.action != "normalize-status":
             raise PMError(2, "--all-legacy applies only to --action normalize-status")
         return _normalize_all_legacy(args)
+    # normalize-keys is whole-file by construction: the canonical form of a key is not a
+    # judgement call, so there is nothing for a --key to scope and nothing to confirm.
+    if args.action == "normalize-keys":
+        return _normalize_keys(args)
     if not args.key:
-        raise PMError(2, "--key is required, or --all-legacy with --action normalize-status")
+        raise PMError(2, "--key is required, or --all-legacy with --action normalize-status, "
+                         "or --action normalize-keys")
     k = canonical_bl_key(args.key)
     if k is None:
         raise PMError(2, f"--key {args.key!r} is not a backlog key")
@@ -6940,6 +7020,25 @@ def _norm_num(v, width: int) -> str:
     if core.isdigit():
         return f"{int(core):0{width}d}"
     return s
+
+
+def canonical_epic_key(v) -> str:
+    """'3'/'03'/'003'/'E3'/'e003' -> 'E003'. The KEY form, for files that store keys.
+
+    Two canonical forms exist on purpose and the difference is per-file, not arbitrary:
+    `issues.yaml` stores bare digits ('003') because `canonical_bl_key` slices them straight
+    out of `BL-E003-007`, and `events.jsonl` stores key form ('E003') because its story
+    records already derive `epic` from `parse_story_key`, which yields 'E001'. Forcing one
+    form everywhere would either churn every existing backlog record or make a dispatch
+    event disagree with the story event beside it. So: normalise to the form the file
+    already uses, and never store the caller's spelling.
+    """
+    return "E" + _norm_num(v, 3)
+
+
+def canonical_sprint_key(v) -> str:
+    """'1'/'01'/'S1'/'s01' -> 'S01'. See canonical_epic_key for why two forms exist."""
+    return "S" + _norm_num(v, 2)
 
 
 def _origin_archived(state_root, epic) -> bool:
@@ -7804,7 +7903,8 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--key", default=None,
                     help="the item; for reseed, any key of the epic; omit with --all-legacy")
     rp.add_argument("--action", required=True,
-                    choices=["unschedule", "link", "reseed", "reopen", "normalize-status"])
+                    choices=["unschedule", "link", "reseed", "reopen", "normalize-status",
+                             "normalize-keys"])
     rp.add_argument("--story", default=None, help="with --action link")
     rp.add_argument("--all-legacy", dest="all_legacy", action="store_true",
                     help="with --action normalize-status: every legacy status in one pass")

@@ -20,6 +20,9 @@ planning_artifacts = "{project-root}/_bmad-output/planning-artifacts"
 implementation_artifacts = "{project-root}/_bmad-output/implementation-artifacts"
 project_knowledge = "{project-root}/docs"
 
+[modules.cis]
+visual_tools = "intermediate"
+
 [modules.tea]
 test_artifacts = "{project-root}/_bmad-output/test-artifacts"
 tea_use_playwright_utils = true
@@ -35,9 +38,6 @@ risk_threshold = "p1"
 test_design_output = "_bmad-output/test-artifacts/test-design"
 test_review_output = "_bmad-output/test-artifacts/test-reviews"
 trace_output = "_bmad-output/test-artifacts/traceability"
-
-[modules.cis]
-visual_tools = "intermediate"
 
 [modules.l3io-sec]
 research_cache_ttl_days = "30"
@@ -84,14 +84,6 @@ name = "Amelia"
 title = "Senior Software Engineer"
 icon = "💻"
 description = "Test-first discipline (red, green, refactor), 100% pass before review, no fluff all precision. Speaks like a terminal prompt: exact file paths, AC IDs, and commit-message brevity — every statement citable."
-
-[agents.bmad-tea]
-module = "tea"
-team = "software-development"
-name = "Murat"
-title = "Master Test Architect and Quality Advisor"
-icon = "🧪"
-description = "Risk-based testing strategy, fixture architecture, ATDD, API and UI automation (Playwright, Cypress, pytest, JUnit, Go test, xUnit, RSpec), mobile native automation (Maestro), consumer-driven contract testing (Pact), and performance/load/chaos testing (k6). Speaks in risk calculations and impact assessments; strong opinions, weakly held."
 
 [agents.bmad-cis-agent-storyteller]
 module = "cis"
@@ -140,6 +132,14 @@ name = "Caravaggio"
 title = "Visual Communication + Presentation Expert"
 icon = "🎬"
 description = "Channels Nancy Duarte's presentation architecture and Saul Bass's cinematic graphic instinct, knows visual hierarchy drives attention, cuts every frame that isn't inform-persuade-or-transition, tests the 3-second rule on everything. Speaks like an energetic creative director — sarcastic wit, dramatic reveals, celebrates bold choices and roasts bad design with humor."
+
+[agents.bmad-tea]
+module = "tea"
+team = "software-development"
+name = "Murat"
+title = "Master Test Architect and Quality Advisor"
+icon = "🧪"
+description = "Risk-based testing strategy, fixture architecture, ATDD, API and UI automation (Playwright, Cypress, pytest, JUnit, Go test, xUnit, RSpec), mobile native automation (Maestro), consumer-driven contract testing (Pact), and performance/load/chaos testing (k6). Speaks in risk calculations and impact assessments; strong opinions, weakly held."
 
 [agents.redteam]
 module = "l3io-sec"

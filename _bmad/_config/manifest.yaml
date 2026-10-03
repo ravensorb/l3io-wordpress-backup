@@ -1,45 +1,45 @@
 installation:
   version: 6.12.0
   installDate: 2026-09-12T13:09:15.902Z
-  lastUpdated: 2026-10-02T16:40:42.970Z
+  lastUpdated: 2026-10-03T14:16:10.163Z
   installShims: false
 modules:
   - name: core
     version: 6.12.0
     installDate: 2026-09-12T13:09:15.026Z
-    lastUpdated: 2026-10-02T16:40:42.881Z
+    lastUpdated: 2026-10-03T14:16:10.120Z
     source: built-in
     npmPackage: null
     repoUrl: null
   - name: bmm
     version: 6.12.0
     installDate: 2026-09-12T13:17:49.286Z
-    lastUpdated: 2026-10-02T16:40:42.883Z
+    lastUpdated: 2026-10-03T14:16:10.122Z
     source: built-in
     npmPackage: null
     repoUrl: null
-  - name: tea
-    version: v1.27.2
-    installDate: 2026-09-30T09:18:16.609Z
-    lastUpdated: 2026-10-02T16:40:42.887Z
-    source: external
-    npmPackage: bmad-method-test-architecture-enterprise
-    repoUrl: https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise
-    channel: stable
-    sha: d99ad29c62697c152e3393351406686d5bcd323c
   - name: cis
     version: v0.3.2
     installDate: 2026-09-30T09:18:16.690Z
-    lastUpdated: 2026-10-02T16:40:42.904Z
+    lastUpdated: 2026-10-03T14:16:10.126Z
     source: external
     npmPackage: bmad-creative-intelligence-suite
     repoUrl: https://github.com/bmad-code-org/bmad-module-creative-intelligence-suite
     channel: stable
     sha: 97298b22fee1c7e482710d3a8414adb5cfccccd9
+  - name: tea
+    version: v1.27.2
+    installDate: 2026-09-30T09:18:16.609Z
+    lastUpdated: 2026-10-03T14:16:10.130Z
+    source: external
+    npmPackage: bmad-method-test-architecture-enterprise
+    repoUrl: https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise
+    channel: stable
+    sha: d99ad29c62697c152e3393351406686d5bcd323c
   - name: l3io-pm
     version: main
     installDate: 2026-09-12T13:09:15.482Z
-    lastUpdated: 2026-10-02T16:40:42.919Z
+    lastUpdated: 2026-10-03T14:16:10.141Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions
@@ -47,7 +47,7 @@ modules:
   - name: l3io-sec
     version: main
     installDate: 2026-09-12T13:09:15.528Z
-    lastUpdated: 2026-10-02T16:40:42.934Z
+    lastUpdated: 2026-10-03T14:16:10.149Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions
@@ -55,7 +55,7 @@ modules:
   - name: l3io-util
     version: main
     installDate: 2026-09-12T13:09:15.608Z
-    lastUpdated: 2026-10-02T16:40:42.960Z
+    lastUpdated: 2026-10-03T14:16:10.155Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions
@@ -63,7 +63,7 @@ modules:
   - name: l3io-arch
     version: main
     installDate: 2026-09-12T13:09:15.666Z
-    lastUpdated: 2026-10-02T16:40:42.970Z
+    lastUpdated: 2026-10-03T14:16:10.163Z
     source: custom
     npmPackage: null
     repoUrl: https://github.com/ravensorb/bmad-extensions
