@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["ruamel.yaml>=0.18"]
 # ///
-# pm-status-version: 3.2.4   (machine-readable marker; `self-install` compares this across copies — keep at top)
+# pm-status-version: 3.4.2   (machine-readable marker; `self-install` compares this across copies — keep at top)
 """
 pm-status.py — deterministic, atomic, round-trip-safe writer for the l3io-pm
 sharded state tree, and the reader behind its progress report.
@@ -83,8 +83,9 @@ Subcommands
                 cost is DERIVED from tokens x rates — --cost/--cost-low/--cost-high are
                 declared but always rejected; use estimate-story/estimate-rollup instead)
                 [--confidence {low,medium,high}] [--flock]
-  set-depends-on --state-root S  (--story KEY | --epic ID)  --add KEY [--add KEY ...]
-                (appends to depends_on, the one LIST-shaped field: epic keys on an epic
+  set-depends-on --state-root S  (--story KEY | --epic ID)
+                (--add KEY [--add KEY ...] | --remove KEY [--remove KEY ...] [--force])
+                (adds to or removes from depends_on, the one LIST-shaped field: epic keys on an epic
                 node, story keys on a story node -- status-files.md §11. set-field would
                 store a list as the string "['E001']", which a reader takes for a scalar.
                 Idempotent, order preserved, all-or-nothing: every key is validated
@@ -190,6 +191,20 @@ Subcommands
                 abandoned one; a story node that does not parse, is not valid UTF-8 or
                 is not a mapping, or a claimant whose key: is malformed, exits 2 naming
                 the file, before any write)
+  schedule-issue --state-root S  --key K [--key K2 ...]  --story E{nnn}-S{nn}-{nnn}
+                [--session-id ID] [--cause C]
+                (attaches open items to a story that ALREADY EXISTS -- the counterpart to
+                promote-issue, which only ever creates one; appends each key to the
+                story's `resolves:` and marks the items scheduled, story node first so an
+                interrupted run leaves finding 1d, which repair-issue --action link
+                repairs, rather than 1e, which has no single-key repair; idempotent by
+                skip for a key already scheduled to THIS story, exit 2 for one scheduled
+                to a different story; exit 3 for an absent story, exit 2 for a story that
+                is `done` or whose epic is under archived/, exit 4 on a back-reference
+                mismatch; does NOT re-estimate the story or roll up its parents; locks in
+                promote-issue's order -- epic_node_lock then one issues_lock spanning the
+                decisive check through the save; every refusal is checked before the first
+                write)
   audit-issues  --state-root S  [--format {text,json}]
                 (read-only integrity checks 1a-1k over both issue files and the story
                 nodes' resolves:, read under issues_lock when either issue file exists;
@@ -217,6 +232,34 @@ Subcommands
                 unschedule writes an issue_unscheduled event; a story node that does
                 not parse, is not valid UTF-8 or is not a mapping exits 2 naming the
                 file, before any write)
+  dump-plan     --state-root S  [--pretty]
+                  (the planned tree plus read-only context, as JSON. The one read interface
+                   for consumers that need a plan's SHAPE: check 26 forbids any file under
+                   skills/ from assembling a state path, so the reorg analyzer asks for the
+                   tree rather than walking it. Active and archived appear as keys and
+                   dependencies only -- they are read-only input.)
+  retire-epic   --state-root S  --epic ID  --reason TEXT
+                  (move-epic --to archived plus retired_reason/retired_at; epic-level only,
+                   because planned/active/archived are folders of EPIC directories and a
+                   single retired story has nowhere to go. Never deletes.)
+  reparent-story  --state-root S  --artifacts-root A  --story K  --to-epic E  --to-sprint SP
+                  (moves a PLANNED story to another sprint, re-keying it; moves the state
+                   node and its document together, preserving any -slug, repoints inbound
+                   depends_on and backlog refs, appends the old key to previous_keys, and
+                   raises the source sprint's high-water so the vacated key is never reissued)
+  reorg-log     --state-root S  [--hash] [--record FILE] [--list] [--show ID]
+                [--format {text,json}]
+                  (the reorg journal. --hash prints the planned tree's PLACEMENT digest and
+                   is captured BEFORE applying, as the record's pre_hash; --record appends
+                   one reorg's rationale and operations and prints its id. A record whose
+                   operations include a kind undo cannot invert is refused, so an entry never
+                   promises an undo that cannot run.)
+  reorg-undo    --state-root S  --artifacts-root A  --id R0001  [--check]
+                  (inverts a recorded reorg through the same reparent-story/move-epic
+                   primitives, in reverse order. REFUSES if the planned tree's placement
+                   digest no longer matches what was recorded: an undo replays placements
+                   derived from a plan that no longer exists. Restores PLACEMENT, not keys --
+                   the allocator's high-water never decreases, by design.)
   move-epic     --state-root S  --epic ID  --to {planned,active,archived}
   archive-epic  --state-root S  --epic ID   (alias for move-epic --to archived)
   calibration   show  --state-root S  [--format {text,json}]
@@ -253,6 +296,12 @@ Subcommands
                 (never conflated with exit 1); advisory only -- a damaged notices file
                 never blocks the caller, but a failed write is reported, not silently
                 treated as success)
+  sync-agent-instructions  --runtime {claude,codex,copilot,other}  --project-root P
+                [--body-file F] [--version V]  (--apply | --remove | --check)
+                (creates, replaces or removes the marker-wrapped l3io block in the running
+                harness's instruction file, under a lock held across read and write; never
+                deletes the file; exit 1 = --check found no block, exit 2 = usage, an
+                undecodable file, or ambiguous markers)
 
 Exit codes: 0 = success/verified, 1 = notice already emitted for this key
 (notice only), 2 = usage error or, for notice only, an unexpected recording failure,
@@ -269,6 +318,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -283,7 +333,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment guard
     )
     sys.exit(2)
 
-PM_STATUS_VERSION = "3.2.4"  # keep in sync with the top-of-file `# pm-status-version:` marker
+PM_STATUS_VERSION = "3.4.2"  # keep in sync with the top-of-file `# pm-status-version:` marker
 
 VALID_STORY_STATUS = {"backlog", "ready-for-dev", "in-progress", "review", "done", "blocked"}
 VALID_SPRINT_STATUS = {"backlog", "in-progress", "review", "done"}
@@ -373,6 +423,39 @@ def _atomic_dump(y: YAML, data, path: str) -> None:
         raise
 
 
+def _atomic_text_write(path: str, text: str) -> None:
+    """Temp file beside the target, fsync, then os.replace. Unlike `_atomic_dump` this takes
+    no epic lock -- the target is a user-owned document outside the state tree, so the
+    epic-lock invariant does not apply and asserting it would fail every call. `newline=""`
+    is load-bearing: the engine already matched the file's CRLF convention, and Python's
+    default translation would rewrite every line ending.
+
+    We are a guest in the user's file, so two things are preserved: a symlink (the path is
+    resolved first, so the link's real target is what changes and the link survives, with
+    the temp file in the RESOLVED directory so os.replace cannot cross devices) and the
+    file's mode (mkstemp makes 0600; an existing file's mode is copied, a new file gets
+    0666 & ~umask)."""
+    path = os.path.realpath(path)
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".l3io-ai-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        if os.path.exists(path):
+            shutil.copymode(path, tmp)
+        else:
+            umask = os.umask(0)
+            os.umask(umask)
+            os.chmod(tmp, 0o666 & ~umask)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
 def _atomic_create(path: str, text: str) -> bool:
     """Create `path` with `text` only if it does not already exist -- atomically and without
     ever clobbering: write a temp file in the same directory, fsync it, then os.link it into
@@ -429,12 +512,12 @@ def _lock_rule_present(text: str, pattern: str = _LOCK_IGNORE_LINE) -> bool:
     return present
 
 
-def _missing_ignore_patterns(text: str):
-    """Which of `_GITIGNORE_PATTERNS` git does NOT currently read `text` as ignoring."""
-    return [p for p in _GITIGNORE_PATTERNS if not _lock_rule_present(text, p)]
+def _missing_ignore_patterns(text: str, patterns=_GITIGNORE_PATTERNS):
+    """Which of `patterns` git does NOT currently read `text` as ignoring."""
+    return [p for p in patterns if not _lock_rule_present(text, p)]
 
 
-def _ensure_lock_ignore(state_root: str) -> None:
+def _ensure_lock_ignore(state_root: str, patterns=_GITIGNORE_PATTERNS) -> None:
     """Make `{state_root}/.gitignore` carry every pattern in `_GITIGNORE_PATTERNS` --
     `*.lock` and `.notices.yaml` -- so neither a lock file nor the notices ledger is ever
     committed.
@@ -460,7 +543,10 @@ def _ensure_lock_ignore(state_root: str) -> None:
     for writing. Missing lines are appended after a newline when the file lacks a trailing
     one; existing content is never rewritten or reordered. Best-effort: this runs inside the
     lock path, so an OSError or an undecodable file warns once on stderr and returns -- it
-    never raises and never fails the verb."""
+    never raises and never fails the verb.
+
+    `patterns` narrows what is written, for a directory that is not a state root: the
+    agent-instruction lock under `_bmad/` needs only `*.lock`, not the notices ledger."""
     root = os.path.realpath(state_root or ".")
     if root in _LOCK_IGNORE_CHECKED:
         return
@@ -469,10 +555,10 @@ def _ensure_lock_ignore(state_root: str) -> None:
     try:
         if not os.path.lexists(path) and _atomic_create(
                 path, "# pm-status.py state files -- never commit\n" +
-                      "".join(f"{p}\n" for p in _GITIGNORE_PATTERNS)):
+                      "".join(f"{p}\n" for p in patterns)):
             return
         with open(path, "rb") as fh:                # read first: needs no write access
-            if not _missing_ignore_patterns(fh.read().decode("utf-8-sig")):
+            if not _missing_ignore_patterns(fh.read().decode("utf-8-sig"), patterns):
                 return
         try:
             import fcntl
@@ -484,7 +570,7 @@ def _ensure_lock_ignore(state_root: str) -> None:
             try:
                 fh.seek(0)
                 text = fh.read().decode("utf-8-sig")   # re-check under the flock; BOM skipped
-                missing = _missing_ignore_patterns(text)
+                missing = _missing_ignore_patterns(text, patterns)
                 if not missing:
                     return
                 sep = "" if not text or text.endswith("\n") else "\n"
@@ -495,7 +581,7 @@ def _ensure_lock_ignore(state_root: str) -> None:
                     fcntl.flock(fh, fcntl.LOCK_UN)
     except (OSError, UnicodeDecodeError) as e:
         sys.stderr.write(f"pm-status.py: warning -- could not add "
-                         f"{', '.join(_GITIGNORE_PATTERNS)} to {path}: {e}\n")
+                         f"{', '.join(patterns)} to {path}: {e}\n")
 
 
 def _state_root_of_node(path: str):
@@ -958,9 +1044,12 @@ def build_events_index(state_root: str) -> dict:
                     continue
                 if ev.get("event") != "status" or not ev.get("key"):
                     continue
-                prev = idx.get(ev["key"])
+                k = _indexable_key(ev["key"])      # a non-empty list is truthy AND unhashable
+                if k is None:
+                    continue
+                prev = idx.get(k)
                 if prev is None or str(ev.get("ts", "")) >= str(prev.get("ts", "")):
-                    idx[ev["key"]] = ev
+                    idx[k] = ev
     except OSError as e:
         sys.stderr.write(f"pm-status.py: warning — could not read event log: {e}\n")
     return idx
@@ -998,24 +1087,109 @@ def cmd_dispatch(args) -> int:
         v = getattr(args, k, None)
         if v:
             payload[k] = _canon[k](v) if k in _canon else v
+    # Resolve the match BEFORE appending: this close is itself a close record, so
+    # a scan taken afterwards has already cancelled the open it is reporting on.
+    matched = None
+    if args.event == "close":
+        matched = _pending_dispatches(args.state_root).get(_dispatch_identity(payload))
     append_event(args.state_root, payload)
-    sys.stdout.write(f"OK dispatch {args.event} {args.agent}\n")
+    if args.event != "close":
+        sys.stdout.write(f"OK dispatch {args.event} {args.agent}\n")
+    elif matched is not None:
+        # An orphan close stays exit 0 -- legitimate on a log that may begin
+        # mid-run -- but the verb could not previously tell the two cases apart,
+        # so a close that cancelled nothing read exactly like one that worked.
+        sys.stdout.write(f"OK dispatch close {args.agent} "
+                         f"(cancelled open from {matched.get('ts')})\n")
+    else:
+        sys.stdout.write(f"OK dispatch close {args.agent} (no matching open found)\n")
     return 0
+
+
+def _hashable_field(v):
+    """A hashable stand-in for a field read out of `events.jsonl`.
+
+    Used by every reader over that log that keys a dict on a record field. The log is
+    append-only, written by concurrent flock'd writers and documented as possibly torn,
+    so a field can hold any JSON type -- and a list or a dict is unhashable, which turns
+    `idx[rec["key"]]` into `TypeError: unhashable type` and takes down the reader.
+
+    The readers all guarded the RECORD (`isinstance(rec, dict)`) and none guarded a
+    field inside it, so the same defect existed four times over: in
+    `_dispatch_identity`, where it crashed `report --watch`; in `build_events_index`,
+    where `ev.get("key")` was only truthy-checked and a non-empty list is truthy; and in
+    `actual_event_times`, where `k not in idx` raises exactly as a subscript does -- a
+    membership test is not the safe alternative to indexing.
+
+    `str()` is a floor that keeps the scan alive and the record distinguishable, not a
+    conversion any caller should rely on: a malformed field has no correct value, and
+    inventing one would be worse than carrying it through as its own repr.
+
+    Carrying through is right HERE and wrong for an index -- see `_indexable_key`.
+    """
+    return v if isinstance(v, (str, int, float, bool)) else str(v)
+
+
+def _indexable_key(v):
+    """A node key usable as an index key, or None when the field cannot be one.
+
+    The counterpart to `_hashable_field`, and the difference is the reader's job, not a
+    preference. `_dispatch_identity` only needs INTERNAL consistency -- an open and its
+    close hashing alike -- so a malformed field carried through under its repr still
+    matches its own close, and dropping it would make that dispatch permanently
+    uncloseable. An index keyed by node key is looked up BY a real node key, so a value
+    that no node could ever have is not a key: carrying it adds a phantom entry
+    corresponding to nothing, and dropping it loses nothing real.
+
+    Returns None for a list, a dict, or an empty/whitespace-only string. The caller
+    skips the record, which is what "a torn line must not kill the read" has always
+    meant one level up.
+    """
+    if not isinstance(v, (str, int, float)) or isinstance(v, bool):
+        return None
+    k = str(v).strip()
+    return k or None
 
 
 def _dispatch_identity(rec: dict) -> tuple:
     """What makes two dispatch records the same dispatch. Agent plus node keys —
     a story-level retry of the same agent reuses the identity deliberately, so a
-    close always cancels the most recent matching open."""
-    return (rec.get("agent"), rec.get("epic"), rec.get("sprint"), rec.get("story"))
+    close always cancels the most recent matching open.
+
+    Node keys are canonicalised HERE, on read, rather than trusted as stored. The
+    write sites canonicalise too, but a write site can only govern records written
+    after it: `events.jsonl` is append-only, so an open written before the
+    write-side fix holds the caller's spelling ('01') while every close now holds
+    'S01'. Comparing the two raw left those dispatches permanently uncloseable,
+    with no CLI route to clear them, because the canonical write path cannot emit
+    a close that matches a non-canonical open. Canonicalising on read makes every
+    historical spelling comparable with no rewrite of the log, which is sound
+    because both key functions are idempotent ('S01' -> 'S01') and total
+    (`_norm_num` falls back to the stripped string rather than raising).
+
+    Every element is forced hashable. This tuple is a dict key on the stall
+    dashboard's read path, and a record whose field held a list used to raise
+    `TypeError: unhashable type` out of `pending[...]` — crashing the exact
+    surface `_pending_dispatches` documents itself as reading defensively for.
+    Guarding the whole record (`isinstance(rec, dict)`) never covered a single
+    field inside it.
+    """
+    agent, epic = rec.get("agent"), rec.get("epic")
+    sprint, story = rec.get("sprint"), rec.get("story")
+    return (None if agent is None else _hashable_field(agent),
+            None if epic is None else canonical_epic_key(epic),
+            None if sprint is None else canonical_sprint_key(sprint),
+            None if story is None else _hashable_field(story))
 
 
-def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list:
-    """Dispatches opened and never closed, older than the threshold, oldest first.
+def _pending_dispatches(state_root: str) -> dict:
+    """`_dispatch_identity` -> the open record still outstanding for it.
 
-    Cannot interrupt a hang — makes it visible. A close with no matching open is
-    ignored rather than treated as an error: events.jsonl is append-only and may
-    begin mid-run on a pre-existing project.
+    The one scan behind both `open_dispatches` (which then applies an age
+    threshold) and the `dispatch --event close` report, so the question "is there
+    an open matching this close?" is answered by the same matching rule that
+    decides whether a dispatch shows as stalled. Answering it twice, two ways, is
+    how the two could disagree.
 
     Reads defensively, exactly as `build_events_index` does over the same file:
     the log is appended to by concurrent flock'd writers and is documented as
@@ -1023,11 +1197,12 @@ def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list
     torn write or a hand-edit) must be skipped, not dereferenced, and an OSError
     must warn rather than abort. This is the read behind `report --watch`, the
     stall dashboard — a crash here takes down precisely the surface the stall
-    feature exists to provide.
+    feature exists to provide. `_dispatch_identity` carries the same obligation
+    down to the individual field.
     """
     path = events_path(state_root)
     if not os.path.exists(path):
-        return []
+        return {}
     pending: dict = {}
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -1048,6 +1223,18 @@ def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list
                     pending.pop(_dispatch_identity(rec), None)
     except OSError as e:
         sys.stderr.write(f"pm-status.py: warning — could not read event log: {e}\n")
+    return pending
+
+
+def open_dispatches(state_root: str, threshold_minutes: float, now=None) -> list:
+    """Dispatches opened and never closed, older than the threshold, oldest first.
+
+    Cannot interrupt a hang — makes it visible. A close with no matching open is
+    ignored rather than treated as an error: events.jsonl is append-only and may
+    begin mid-run on a pre-existing project. The close verb reports which case it
+    was (see `_dispatch_close_report`), so "ignored" never means "unreported".
+    """
+    pending = _pending_dispatches(state_root)
     if now is None:
         now = datetime.now(UTC)
     out = []
@@ -1281,6 +1468,27 @@ def notices_lock(state_root: str):
     not been shown yet and each write their own "now recorded" copy, silently dropping one.
     """
     with _file_lock(notices_path(state_root) + ".lock", _NOTICES_LOCK, state_root):
+        yield
+
+
+_AGENT_INSTR_LOCK = {"depth": 0, "fh": None}
+
+
+@contextlib.contextmanager
+def agent_instructions_lock(project_root: str):
+    """Exclusive lock over the whole read-modify-write of an AI instruction file.
+
+    Same reasoning as notices_lock: two skills activating at once must not both read the
+    pre-write text and let the second overwrite the first's block. The lock file lives under
+    `_bmad/` -- the tool's own directory -- never beside the user's document, and `*.lock`
+    is added to `_bmad/.gitignore` on every acquisition (self-healing, additive, via
+    `_ensure_lock_ignore`). state_root is None for `_file_lock` because `_bmad/` is not a
+    state root and would otherwise also receive the notices pattern.
+    """
+    bmad = os.path.join(project_root, "_bmad")
+    _ensure_lock_ignore(bmad, (_LOCK_IGNORE_LINE,))
+    with _file_lock(os.path.join(bmad, ".agent-instructions.lock"),
+                    _AGENT_INSTR_LOCK, None):
         yield
 
 
@@ -2434,6 +2642,9 @@ def actual_event_times(state_root: str) -> dict:
                 k = ev.get("key")
                 if not k:
                     continue
+                k = _indexable_key(k)              # `k not in idx` raises on an unhashable k
+                if k is None:
+                    continue
                 ts = str(ev.get("ts", ""))
                 if k not in idx or ts >= idx[k]:
                     idx[k] = ts
@@ -2988,6 +3199,210 @@ def cmd_adr_reserve(args) -> int:
         reg["next"] = start + args.count
         _atomic_dump(yaml, reg, adr_register_path(args.state_root))
     sys.stdout.write("\n".join(f"{n:04d}" for n in numbers) + "\n")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
+# agent instruction block -- the marker engine: pure string transforms, no I/O
+#
+# Kept in this file, not a sibling module: `self-install` copies this one file into a
+# consuming project, so a sibling would not be there (ADR-0001).
+#
+# WHY THE MARKERS ARE HTML COMMENTS. They render invisibly, survive a markdown reformat, and
+# are greppable. The repo already uses body markers this way (`resolver-invariant:
+# canonical-contract`), so this follows a precedent rather than inventing a form.
+#
+# WHY A FENCED BLOCK IS EXCLUDED. This package's own documentation shows the marker syntax. A
+# naive search would match the example and splice the wrong region of whatever file documented
+# the feature -- including, eventually, a user's own notes about it.
+# --------------------------------------------------------------------------- #
+BEGIN_RE = re.compile(r"^<!--\s*l3io:begin(?:\s+v=(?P<v>[^\s>]+))?\s*-->[ \t]*(?=\r?$)", re.MULTILINE)
+END_RE = re.compile(r"^<!--\s*l3io:end\s*-->[ \t]*(?=\r?$)", re.MULTILINE)
+# `(?=\r?$)`, not `$`: with re.MULTILINE `$` stops only before "\n", so a CRLF file's markers never matched.
+_FENCE_RE = re.compile(r"^[ \t]*(?P<run>`{3,}|~{3,})(?P<rest>[^\r\n]*)", re.MULTILINE)
+
+
+class BlockError(Exception):
+    """The file's markers are not a single well-formed pair."""
+
+
+def _fenced_spans(text):
+    """Character ranges inside fenced code blocks. A fence closes only on the same character,
+    at least as long as the opener, with nothing after it but whitespace (CommonMark) -- so a
+    four-backtick fence may contain a three-backtick line, and a tilde fence is not closed by
+    backticks. An unclosed fence runs to the end of the file, as a renderer treats it."""
+    spans, opener, open_at = [], None, None
+    for m in _FENCE_RE.finditer(text):
+        run = m.group("run")
+        if opener is None:
+            opener, open_at = run, m.start()
+        elif run[0] == opener[0] and len(run) >= len(opener) and not m.group("rest").strip():
+            spans.append((open_at, m.end()))
+            opener = open_at = None
+    if opener is not None:
+        spans.append((open_at, len(text)))
+    return spans
+
+
+def _outside_fences(matches, spans):
+    return [m for m in matches
+            if not any(lo <= m.start() < hi for lo, hi in spans)]
+
+
+def find_block(text):
+    """(start, end, version) of the block, or None. Raises BlockError when the markers are
+    not exactly one well-formed pair -- a duplicated or stranded marker makes "between the
+    markers" undefined, and guessing would truncate the user's own content."""
+    spans = _fenced_spans(text)
+    begins = _outside_fences(list(BEGIN_RE.finditer(text)), spans)
+    ends = _outside_fences(list(END_RE.finditer(text)), spans)
+    if not begins and not ends:
+        return None
+    if len(begins) != 1 or len(ends) != 1:
+        raise BlockError(
+            f"expected exactly one l3io:begin/l3io:end pair, found "
+            f"{len(begins)} begin and {len(ends)} end marker(s). Fix the file by hand: "
+            f"replacing between ambiguous markers could delete content that is not ours.")
+    b, e = begins[0], ends[0]
+    if e.start() < b.start():
+        raise BlockError("l3io:end appears before l3io:begin")
+    return b.start(), e.end(), b.group("v")
+
+
+def _normalise_nl(text, nl):
+    """Every line ending in `text` becomes `nl`, whatever it was."""
+    return text.replace("\r\n", "\n").replace("\n", nl)
+
+
+def _render(body, version, nl):
+    body = _normalise_nl(body.strip("\n"), nl)
+    return nl.join([f"<!-- l3io:begin v={version} -->", body, "<!-- l3io:end -->"])
+
+
+def _newline(text):
+    """Match the file's existing convention so a CRLF file stays CRLF."""
+    return "\r\n" if "\r\n" in text else "\n"
+
+
+def apply_block(text, body, version):
+    """Create, replace, or leave alone. Returns (text, 'created'|'replaced'|'unchanged')."""
+    nl = _newline(text)
+    found = find_block(text)
+    rendered = _render(body, version, nl)
+    if found is None:
+        sep = "" if text == "" else (nl if text.endswith(nl) else nl + nl)
+        return text + sep + rendered + nl, "created"
+    start, end, _ = found
+    current = text[start:end]
+    # Compare BODY, not version: a release that does not change the text must not rewrite a
+    # file in the user's repo just to bump a string they did not ask about.
+    if _strip_markers(_normalise_nl(current, nl), nl) == _strip_markers(rendered, nl):
+        return text, "unchanged"
+    return text[:start] + rendered + text[end:], "replaced"
+
+
+def _strip_markers(block, nl):
+    lines = block.split(nl)
+    return nl.join(lines[1:-1]).strip()
+
+
+def remove_block(text):
+    """Returns (text, 'removed'|'absent'). Never deletes anything outside the pair."""
+    found = find_block(text)
+    if found is None:
+        return text, "absent"
+    nl = _newline(text)
+    start, end, _ = found
+    before, after = text[:start], text[end:]
+    # Touch only the seam: the block's own line terminator, plus at most one separator blank
+    # line that `apply_block` put there. Blank lines anywhere else belong to the user.
+    after = after.removeprefix(nl)
+    if before.endswith(nl + nl) and (after == "" or after.startswith(nl)):
+        before = before[:-len(nl)]
+    out = before + after
+    return out, "removed"
+
+
+_RUNTIME_INSTRUCTION_FILE = {
+    "claude": ("CLAUDE.md",),
+    "copilot": (".github", "copilot-instructions.md"),
+    "codex": ("AGENTS.md",),
+    "other": ("AGENTS.md",),
+}
+
+
+def cmd_sync_agent_instructions(args) -> int:
+    """Create, replace or remove the l3io block in the running harness's instruction file.
+
+    NEVER writes a file for a harness that is not running: the target comes from --runtime
+    alone. That rule is inherited from update-ai-rules Step AR5, where writing AGENTS.md
+    under Claude put a block in a file belonging to another AI system.
+
+    NEVER deletes the file. --remove strips the block and leaves whatever else is there,
+    including nothing.
+
+    Exit 0 = acted or already correct; 1 = --check found the block absent; 2 = usage, an
+    undecodable file, or ambiguous markers -- all cases where we must not write.
+    """
+    target = os.path.join(args.project_root, *_RUNTIME_INSTRUCTION_FILE[args.runtime])
+
+    if not args.remove and not args.check and not args.body_file:
+        sys.stderr.write("pm-status.py: sync-agent-instructions: --apply needs --body-file\n")
+        return 2
+    def _undecodable(path, e):
+        sys.stderr.write(f"pm-status.py: sync-agent-instructions: {path} is not valid "
+                         f"utf-8 ({e}); refusing to write\n")
+        return 2
+
+    body = ""
+    if not args.remove and not args.check:
+        try:
+            # Default universal newlines: the body is normalised, only the TARGET keeps its
+            # own convention (a CRLF body would otherwise leave a stray \r in an LF file).
+            with open(args.body_file, encoding="utf-8") as fh:
+                body = fh.read()
+        except UnicodeDecodeError as e:
+            return _undecodable(args.body_file, e)
+        except OSError as e:
+            sys.stderr.write(f"pm-status.py: sync-agent-instructions: {e}\n")
+            return 2
+
+    def _read_target():
+        if not os.path.isfile(target):
+            return ""
+        with open(target, encoding="utf-8", newline="") as fh:
+            return fh.read()
+
+    try:
+        if args.check:
+            # A pure query: no lock, so it never creates _bmad/ or a lock file (it runs at
+            # every skill activation, and under a mistyped --project-root). Its answer is
+            # advisory and inherently racy, so the lock would buy nothing.
+            try:
+                return 0 if find_block(_read_target()) else 1
+            except UnicodeDecodeError as e:
+                return _undecodable(target, e)
+        # The lock spans the READ as well as the write: otherwise two callers each read the
+        # pre-write text and the second silently overwrites the first's block.
+        with agent_instructions_lock(args.project_root):
+            try:
+                text = _read_target()
+            except UnicodeDecodeError as e:
+                return _undecodable(target, e)
+            if args.remove:
+                out, action = remove_block(text)
+            else:
+                out, action = apply_block(text, body, args.version or PM_STATUS_VERSION)
+            if action not in ("unchanged", "absent"):
+                os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+                _atomic_text_write(target, out)
+    except BlockError as e:
+        sys.stderr.write(f"pm-status.py: sync-agent-instructions: {target}: {e}\n")
+        return 2
+    except OSError as e:
+        sys.stderr.write(f"pm-status.py: sync-agent-instructions: {e}\n")
+        return 2
+    sys.stdout.write(f"OK sync-agent-instructions {action} {target}\n")
     return 0
 
 
@@ -4405,7 +4820,7 @@ DEPENDS_ON_KEY_RE = {"epic": EPIC_KEY_RE, "story": STORY_KEY_RE}
 
 
 def cmd_set_depends_on(args) -> int:
-    """Append epic keys to an epic's `depends_on` list.
+    """Add or remove keys on a node's `depends_on` list.
 
     `depends_on` is epic-only and list-shaped (status-files.md §11). `set-field --value` takes a
     single string, so routing a list through it would store "['E001']" as a scalar -- worse than
@@ -4415,6 +4830,21 @@ def cmd_set_depends_on(args) -> int:
     All-or-nothing: every key is validated before anything is written, because a half-applied
     dependency list is a worse artefact than an absent one -- l3io-plan topologically sorts
     on it, so a missing edge silently reorders a phase.
+
+    --remove EXISTS BECAUSE ITS ABSENCE FORCED A HAND EDIT. This verb was append-only, and
+    `set-field` refuses a list, so the only way to drop a dependency was to open epic.yaml and
+    edit it -- which the state contract forbids, and for the reason this whole script exists:
+    free-form YAML edits were dropped and malformed under parallel execution. A reorg that
+    removes the last story edge justifying `E001 depends_on E003` leaves that declaration
+    standing, and phases come from epic-level depends_on, so the two epics keep serialising
+    and the reorg's whole purpose goes unrealised. There was no command to recommend.
+
+    REMOVING A STILL-JUSTIFIED DEPENDENCY IS REFUSED. If any story under this node still
+    depends on a story under the key being removed, dropping the edge tells the planner the
+    two can run concurrently when they cannot. `--force` overrides, because an epic
+    dependency can also encode a sequencing decision no story edge expresses ("ship the API
+    before the client"), and this script cannot tell those apart -- but it can make the
+    difference deliberate.
     """
     from ruamel.yaml.comments import CommentedSeq
     from ruamel.yaml.scalarstring import SingleQuotedScalarString as SQ
@@ -4427,15 +4857,49 @@ def cmd_set_depends_on(args) -> int:
     self_key = args.epic if kind == "epic" else args.story
 
     keys = list(args.add or [])
-    if not keys:
-        _die_usage("set-depends-on needs at least one --add KEY")
-    for k in keys:
+    drops = list(getattr(args, "remove", None) or [])
+    if not keys and not drops:
+        _die_usage("set-depends-on needs at least one --add KEY or --remove KEY")
+    if keys and drops:
+        # Refused rather than ordered. Whichever order were chosen, half the readers of a
+        # later command would assume the other, and the two are trivially separable calls.
+        _die_usage("--add and --remove in one call is refused: the result would depend on an "
+                   "order nobody can see. Run them as two commands")
+    for k in keys + drops:
         if not key_re.match(k):
-            _die_usage(f"--add {k!r} is not a {kind} key (expected {key_re.pattern}); "
+            flag = "--add" if k in keys else "--remove"
+            _die_usage(f"{flag} {k!r} is not a {kind} key (expected {key_re.pattern}); "
                        f"nothing written")
+    for k in keys:
         if k == self_key:
             _die_usage(f"--add {k!r} is the node itself -- it cannot depend on itself; "
                        f"nothing written")
+
+    # The justification check runs BEFORE the lock, because it reads the whole epic tree and
+    # refusing is the common outcome on a mistaken call -- taking a write lock to then refuse
+    # would block a concurrent legitimate write for no reason.
+    if drops and kind == "epic" and not getattr(args, "force", False):
+        # Only keys actually PRESENT can be refused. Removing one that is not there is a
+        # no-op, and a no-op must not be blocked by a justification for an edge that is
+        # already gone -- a caller acting on a stale read would otherwise get an error for
+        # asking for a state the tree is already in.
+        _p = epic_file(args.state_root, canonical_epic_key(self_key))
+        _cur = []
+        if _p:
+            _, _n = load_node(_p)
+            if isinstance(_n, dict):
+                _cur = [str(e) for e in (_n.get("depends_on") or [])]
+        present = [k for k in drops if str(k) in _cur]
+        blocked = _justifying_story_edges(args.state_root, self_key, present) if present else []
+        if blocked:
+            shown = ", ".join(f"{a} -> {b}" for a, b in blocked[:5])
+            more = f" (+{len(blocked) - 5} more)" if len(blocked) > 5 else ""
+            _die_usage(f"refusing to remove {sorted({b for _a, b in blocked})} from "
+                       f"{self_key}: {len(blocked)} story dependency(ies) still cross that "
+                       f"boundary — {shown}{more}. Dropping the edge would tell the planner "
+                       f"these epics can run concurrently when they cannot. Move the stories "
+                       f"first (/l3io-plan reorg), or pass --force if this dependency is a "
+                       f"sequencing decision no story edge expresses")
 
     with _epic_write_lock(args, kind):
         y, node, path, label = _load_checked(args.state_root, args, kind)
@@ -4443,16 +4907,53 @@ def cmd_set_depends_on(args) -> int:
         if not isinstance(existing, list):
             existing = CommentedSeq()
             node["depends_on"] = existing
-        added = []
+        added, removed = [], []
         for k in keys:
             if str(k) not in [str(e) for e in existing]:
                 existing.append(SQ(k))
                 added.append(k)
+        for k in drops:
+            # Idempotent, like --add: removing a key that is not there is a no-op, not an
+            # error. A caller acting on a stale read should not have to care.
+            hits = [e for e in existing if str(e) == str(k)]
+            for h in hits:
+                existing.remove(h)
+            if hits:
+                removed.append(k)
+        # An emptied list is written as `depends_on: []` rather than dropped, so a reader
+        # sees "declared, and empty" exactly as it sees "never declared" -- both mean no
+        # dependencies, and every reader here treats a missing key and [] the same way.
         node["updated_at"] = _now_iso()
         save_node(y, node, path, getattr(args, "flock", False))
 
-    sys.stdout.write(f"OK set-depends-on {label} += {added or '(nothing new)'}\n")
+    if drops:
+        sys.stdout.write(f"OK set-depends-on {label} -= {removed or '(nothing present)'}\n")
+    else:
+        sys.stdout.write(f"OK set-depends-on {label} += {added or '(nothing new)'}\n")
     return 0
+
+
+def _justifying_story_edges(state_root: str, epic_key: str, targets: list) -> list:
+    """(story, target_epic) for every story edge crossing from epic_key into one of targets.
+
+    What makes an epic-level dependency earned: a story under this epic depending on a story
+    under that one. Zero such edges is what `plan-graph.py` reports as
+    `unneeded-cross-epic-dependency`, and what makes a removal safe.
+    """
+    want = {canonical_epic_key(t) for t in targets}
+    out = []
+    for story_key, path in iter_story_files(state_root, canonical_epic_key(epic_key)):
+        _, node = load_node(path)
+        if not isinstance(node, dict):
+            continue
+        for dep in (node.get("depends_on") or []):
+            try:
+                dep_epic, _sp, _n = parse_story_key(str(dep))
+            except ValueError:
+                continue
+            if dep_epic in want:
+                out.append((story_key, dep_epic))
+    return sorted(out)
 
 
 def cmd_import_node(args) -> int:
@@ -5575,8 +6076,48 @@ def cmd_set_field(args) -> int:
                    f"{DERIVED_NODE_FIELDS[contained]}")
 
     kind = _infer_kind(args)
+    _check_lane_value(args, kind)
     with _epic_write_lock(args, kind):
         return _set_field(args, kind)
+
+
+# A lane is a NUMBER, 1..999. Not a style choice -- it is what makes "never a person"
+# mechanical instead of hopeful. A word-shaped token cannot be screened: `sarah` and
+# `backend` are the same shape, so any regex permitting the second permits the first, and a
+# list of names to reject would be both brittle and culturally parochial. Numbering closes
+# the question by construction, and it matches the rest of the design: `lane_count` is a
+# count, and a lane is a slot in `1..lane_count`.
+_LANE_RE = re.compile(r"^[1-9][0-9]{0,2}$")
+
+
+def _check_lane_value(args, kind) -> None:
+    """Guard the `lane` field: epic-only, and never a person's name.
+
+    WHY THE FIELD IS `lane` AND NOT `owner`. `owner` attracts names — somebody commits
+    `owner: sarah` and the generic concept erodes by default rather than by decision. A lane
+    is a slot in a partition; who fills it lives in the gitignored user layer, so a human's
+    name cannot reach the repository at all. The vocabulary is the guardrail, and this
+    function is what stops the vocabulary being the ONLY guardrail.
+
+    EPIC-ONLY, because `1 epic = 1 lane` is the invariant everything else rests on: sprints
+    and stories live under their epic's directory and inherit its lane by construction. A
+    story carrying its own lane would make the lane graph a different graph from the epic
+    graph, and every cross-lane question would need its own traversal instead of relabelling
+    the epic one.
+    """
+    if getattr(args, "field", None) != "lane":
+        return
+    if kind != "epic":
+        _die_usage(f"`lane` lives on an epic node, not a {kind}. Sprints and stories inherit "
+                   f"their epic's lane from the directory they are in — one epic is one lane, "
+                   f"and a story with its own lane would break that")
+    value = str(getattr(args, "value", "") or "")
+    if not _LANE_RE.match(value):
+        _die_usage(f"lane {value!r} is not a lane number. A lane is a SLOT in a partition — "
+                   f"1, 2, 3 — never a person: who works a lane is recorded in the gitignored "
+                   f"user config, so a name cannot reach the repository. Numbering is what "
+                   f"makes that mechanical: a word-shaped token cannot be screened, because "
+                   f"`backend` and `sarah` are the same shape. Expected 1-999")
 
 
 def _set_field(args, kind) -> int:
@@ -6197,7 +6738,14 @@ def cmd_update_issue(args) -> int:
     return _run_core(run)
 
 
-_STORY_FILE_RE = re.compile(r"^E\d{3}-S\d{2}-(\d{3})\.(yaml|md)$")
+# A story FILE in either tree. The optional `-slug` is the documented artifact shape
+# (CLAUDE.md gives `E032-S01-001-centralized-file-config.md` as its own example), and it was
+# not matched here -- so a slugged document did NOT count toward the allocator's disk floor,
+# and its key could be handed out again. `story_doc_path` only ever generates the UNSLUGGED
+# name, so promote-issue's existence check could not see the collision either. One consumer
+# (the disk floor), and widening it can only ever ADD to that floor, which is the safe
+# direction: more things reserve a key, nothing releases one.
+_STORY_FILE_RE = re.compile(r"^E\d{3}-S\d{2}-(\d{3})(?:-[^.]*)?\.(yaml|md)$")
 
 
 def _unevaluable_lock_reason(lock, session_id):
@@ -6256,13 +6804,15 @@ def _foreign_lock_error(epath: str, session_id, epic_key: str):
                       f"lock to expire")
 
 
-def _next_story_key(state_root, artifacts_root, epic_key, sprint_key) -> str:
-    """Highest story number in the sprint across the state directory AND the artifact
-    stories/ directory, plus one: a document without a state node still owns its key."""
+def _highest_story_on_disk(state_root, artifacts_root, epic_key, sprint_key) -> int:
+    """Highest story number present in the sprint, across the state directory AND the
+    artifact stories/ directory. A document without a state node still owns its key."""
     prefix = f"{epic_key}-{sprint_key}-"
-    dirs = [os.path.join(find_epic_dir(state_root, epic_key), sprint_dirname(sprint_key)),
-            os.path.join(artifacts_root, epic_dirname(epic_key), sprint_dirname(sprint_key),
+    epic_dir = find_epic_dir(state_root, epic_key)
+    dirs = [os.path.join(artifacts_root, epic_dirname(epic_key), sprint_dirname(sprint_key),
                          "stories")]
+    if epic_dir is not None:
+        dirs.insert(0, os.path.join(epic_dir, sprint_dirname(sprint_key)))
     highest = 0
     for d in dirs:
         if not os.path.isdir(d):
@@ -6271,7 +6821,52 @@ def _next_story_key(state_root, artifacts_root, epic_key, sprint_key) -> str:
             m = _STORY_FILE_RE.match(name)
             if m and name.startswith(prefix):
                 highest = max(highest, int(m.group(1)))
-    return f"{prefix}{highest + 1:03d}"
+    return highest
+
+
+def _next_story_key(state_root, artifacts_root, epic_key, sprint_key) -> str:
+    """Allocate the sprint's next story key: `max(sprint.next, highest-on-disk + 1)`.
+
+    WHY A HIGH-WATER AND NOT JUST THE DISK. Deriving from the disk alone makes a vacated
+    number immediately reusable. That is harmless while stories only ever appear, but it is a
+    live defect the moment one can MOVE: a story leaving E032-S01-001 frees that key, the next
+    story takes it, and `l3io-sync`'s mapping still points that key's remote issue at what is
+    now DIFFERENT WORK. Nothing errors -- the issue is silently retargeted. `issues.yaml`
+    carries a per-epic `next:` for exactly this reason, documented there as "a high-water mark
+    that never decreases, so a deleted or resolved key is never reused".
+
+    WHY STILL CONSULT THE DISK. Taking the max of both, rather than trusting `next` alone, is
+    what keeps this small. An absent `next` (every project today) behaves exactly as before,
+    so there is no migration. A `next` that is somehow too LOW cannot cause a reuse, because
+    the disk floor still applies -- it is self-healing, which is why this needs no audit
+    finding and no reseed verb, unlike the allocator it is modelled on. A `next` that is too
+    high is honoured: it wastes a number, which is the safe direction.
+
+    The only consequence for an ordinary project is that keys become sparse where a story is
+    deleted, instead of the next one backfilling the hole.
+
+    Callers hold the epic write lock (see cmd_promote_issue), so the read-modify-write below
+    is already serialised; it takes no lock of its own.
+    """
+    prefix = f"{epic_key}-{sprint_key}-"
+    floor = _highest_story_on_disk(state_root, artifacts_root, epic_key, sprint_key) + 1
+
+    spath = sprint_file(state_root, epic_key, sprint_key)
+    y = node = None
+    stored = 0
+    if spath is not None:
+        y, node = load_node(spath)
+        if isinstance(node, dict):
+            try:
+                stored = int(node.get("next") or 0)
+            except (TypeError, ValueError):
+                stored = 0          # unparseable is treated as absent; the disk floor holds
+
+    number = max(stored, floor)
+    if isinstance(node, dict):
+        node["next"] = number + 1   # never decreases: number >= stored, so this only grows
+        save_node(y, node, spath)
+    return f"{prefix}{number:03d}"
 
 
 def _yaml_error_reason(e) -> str:
@@ -6526,6 +7121,177 @@ def _promote_issue(args) -> int:
         _issue_event(sr, "issue_scheduled", it, args.session_id, args.cause, story=story_key)
     sys.stdout.write(f"OK promote-issue {', '.join(keys)} -> {story_key}"
                      f"{' (resumed)' if resumed else ''}\n")
+    return 0
+
+
+def _schedulable_items(store, keys, story_key):
+    """Split `keys` into (to_schedule, already_here) for a named existing story.
+
+    Gate order mirrors `_promotable_items`: resolved FIRST (Ruling 8), because a key in
+    issues-resolved.yaml is resolved even if a stale open copy survives resolve's crash
+    window, then the single-open guard (Ruling 5, finding 1i). It differs in exactly one
+    place. An item already scheduled to THIS story is a skip rather than a refusal,
+    because the mapping that drives this verb is executed as a batch and re-running the
+    whole batch has to be safe -- the alternative is asking the operator to track which
+    of 28 rows applied. An item scheduled to a DIFFERENT story is still a refusal:
+    moving it silently would rewrite a scheduling decision somebody made and leave the
+    old story's `resolves` naming an item it no longer owns, which is audit finding 1e.
+    """
+    to_schedule, already_here = [], []
+    for k in keys:
+        done = store.resolved_items(k)
+        if done:
+            raise PMError(2, f"{k} is already resolved ({done[-1].get('resolution')})")
+        item = store.single_open(k)
+        if item is None:
+            raise PMError(2, f"{k} is not an open backlog item")
+        kind = str(item.get("kind") or "defect")
+        if kind != "defect":
+            raise PMError(2, f"{k} is a {kind} item -- spec items are confirmed or rejected "
+                             f"in /l3io-doctor triage, never scheduled to a story")
+        if str(item.get("status", "backlog")) == "scheduled":
+            at = str(item.get("story") or "")
+            if at == story_key:
+                already_here.append(item)
+                continue
+            raise PMError(2, f"{k} is already scheduled to story {at} -- unschedule it first "
+                             f"(repair-issue --action unschedule --key {k}) rather than "
+                             f"moving it silently")
+        to_schedule.append(item)
+    return to_schedule, already_here
+
+
+def _schedule_target(sr, epic_key, story_key):
+    """(epic path, story path, story node) for schedule-issue, refusing a home the work
+    will never reach. Run once before the epic lock to refuse fast, and again under it,
+    where the answer is decisive.
+
+    Deliberately NOT `_promote_target`: that one also requires the sprint to be
+    `backlog`, which is right for allocating a new story and wrong here -- attaching a
+    finding to an existing story in a sprint already under way is the ordinary case.
+
+    The two refusals are the failure this verb exists to avoid: an item silently
+    acquiring a home nobody will work. `done` and `archived` are checked separately
+    because neither implies the other -- a story under `archived/` can still read
+    `status: backlog`, which is how 34 open items on one consumer tree came to be keyed
+    to an epic that had been archived out from under them.
+    """
+    epath = epic_file(sr, epic_key)
+    if epath is None:
+        raise PMError(3, f"epic {epic_key} not found under {sr}")
+    if os.path.basename(os.path.dirname(os.path.dirname(epath))) == "archived":
+        raise PMError(2, f"epic {epic_key} is archived -- schedule into a planned or active "
+                         f"epic, or move the epic back first (move-epic)")
+    spath = story_file(sr, story_key)
+    if spath is None:
+        raise PMError(3, f"story {story_key} not found under {sr} -- schedule-issue attaches "
+                         f"to a story that exists; use promote-issue to create one")
+    node = load_node(spath)[1]
+    if node is None:
+        raise PMError(3, f"story {story_key} -- file {spath} is empty")
+    ek, sk, _ = parse_story_key(story_key)
+    problems = check_backrefs(node, ek, sk)
+    if problems:
+        raise PMError(4, f"back-reference mismatch for story {story_key}: "
+                         f"{'; '.join(problems)}")
+    status = str(node.get("status", ""))
+    if status == "done":
+        raise PMError(2, f"story {story_key} is done -- its acceptance criteria are already "
+                         f"closed, so an unfixed finding attached here is lost. Schedule it "
+                         f"to an open story, or promote-issue a new one")
+    return epath, spath, node
+
+
+def cmd_schedule_issue(args) -> int:
+    """Attach open BL items to a story that ALREADY EXISTS (the counterpart to
+    promote-issue, which only ever creates one).
+
+    Locking mirrors promote-issue exactly, including the nesting order, so the two
+    cannot deadlock against each other: an advisory `issues_lock` check to refuse fast,
+    an advisory foreign-lock check, then `epic_node_lock`, a re-resolve under it because
+    move-epic holds the same lock and may have moved the directory while this call
+    waited, a decisive foreign-lock re-check, and ONE `issues_lock` hold spanning the
+    decisive item check through the schedule save (Ruling 12a) so a concurrent
+    resolve-issue on the same key cannot land between the check and the write.
+
+    Story node first among the writes, matching promote: a failure after it leaves a
+    story whose `resolves` names the items while they still read `backlog`, which is
+    audit finding 1d -- the state `repair-issue --action link` exists to repair. The
+    reverse order would leave items pointing at a story that never claimed them, which
+    is finding 1e and has no single-key repair.
+
+    It does NOT re-estimate the story or re-roll-up its parents. The story's estimate was
+    set when it was written, by whoever sized it; attaching a finding whose fix its
+    acceptance criteria already imply is not a resize, and overwriting a human's estimate
+    as a side effect of a bookkeeping verb would be worse than leaving it stale.
+    """
+    return _run_core(lambda: _schedule_issue(args))
+
+
+def _schedule_issue(args) -> int:
+    from ruamel.yaml.comments import CommentedSeq
+    sr = args.state_root
+    keys = []
+    for raw in args.key:
+        k = canonical_bl_key(raw)
+        if k is None:
+            raise PMError(2, f"--key {raw!r} is not a backlog key")
+        if k not in keys:
+            keys.append(k)
+    try:
+        epic_key, _sprint_key, _ = parse_story_key(args.story)
+    except ValueError as e:
+        raise PMError(2, str(e)) from None
+
+    open_path = issues_paths(sr)[0]
+    _schedule_target(sr, epic_key, args.story)                    # advisory: refuse fast
+    with issues_lock(open_path):
+        _schedulable_items(IssueStore(open_path), keys, args.story)   # advisory
+    err = _foreign_lock_error(epic_file(sr, epic_key), args.session_id, epic_key)
+    if err:
+        raise err
+    with epic_node_lock(sr, epic_key):
+        # Re-resolve under the lock: move-epic holds it too, so a move that landed while
+        # this call waited has moved the directory the paths above name.
+        epath, spath, node = _schedule_target(sr, epic_key, args.story)
+        err = _foreign_lock_error(epath, args.session_id, epic_key)    # decisive
+        if err:
+            raise err
+        with issues_lock(open_path):
+            store = IssueStore(open_path)
+            items, already = _schedulable_items(store, keys, args.story)   # decisive
+            if items:
+                existing = [str(x) for x in (node.get("resolves") or [])]
+                seq = node.get("resolves")
+                if not isinstance(seq, CommentedSeq):
+                    seq = CommentedSeq(existing)
+                    seq.fa.set_flow_style()
+                    node["resolves"] = seq
+                for it in items:
+                    k = str(it.get("key"))
+                    if k not in existing:        # a story may already claim it (finding 1d)
+                        seq.append(k)
+                save_node(_yaml(), node, spath)
+                stamp = _now_iso()
+                for it in items:
+                    it["status"] = "scheduled"
+                    it["story"] = args.story
+                    it["scheduled_at"] = stamp
+                store.save_open()
+    for it in items:
+        # via: a third route to `scheduled`. promote-issue writes no via, repair-link
+        # writes "repair-link"; without a distinct value the log cannot say how an item
+        # got its story, which is the only record of whether a human chose it.
+        _issue_event(sr, "issue_scheduled", it, args.session_id, args.cause,
+                     story=args.story, via="schedule")
+    done_keys = [str(i.get("key")) for i in items]
+    skipped = [str(i.get("key")) for i in already]
+    parts = []
+    if done_keys:
+        parts.append(f"{', '.join(done_keys)} -> {args.story}")
+    if skipped:
+        parts.append(f"{', '.join(skipped)} already scheduled to {args.story} (skipped)")
+    sys.stdout.write(f"OK schedule-issue {'; '.join(parts)}\n")
     return 0
 
 
@@ -7218,6 +7984,758 @@ def _move_epic_locked(state_root: str, epic_key: str, to_status: str) -> str:
     return dest
 
 
+def _story_doc_on_disk(artifacts_root: str, story_key: str):
+    """The story's document path, whatever its filename shape, or None.
+
+    `story_doc_path` only ever GENERATES the unslugged name, but the documented artifact
+    shape allows an optional trailing slug (`E032-S01-001-centralized-file-config.md`). A
+    re-parent must find and move whichever shape is actually there, and must preserve the
+    slug across the rename -- the key prefix is canonical, the slug is UX.
+    """
+    try:
+        epic_key, sprint_key, _ = parse_story_key(story_key)
+    except ValueError:
+        return None
+    d = os.path.join(artifacts_root, epic_dirname(epic_key), sprint_dirname(sprint_key),
+                     "stories")
+    if not os.path.isdir(d):
+        return None
+    for name in sorted(os.listdir(d)):
+        if not name.endswith(".md"):
+            continue
+        # Exactly the key, or the key followed by a slug separator. `startswith(story_key)`
+        # alone would also match a longer key sharing this one's prefix, which cannot happen
+        # with fixed-width keys today but costs nothing to exclude.
+        if name == f"{story_key}.md" or name.startswith(f"{story_key}-"):
+            return os.path.join(d, name)
+    return None
+
+
+def _doc_slug(path: str, story_key: str) -> str:
+    """The `-slug` part of a story document filename, or '' -- preserved across a re-parent."""
+    base = os.path.basename(path)
+    stem = base.removesuffix(".md")
+    return stem[len(story_key):] if stem.startswith(story_key) else ""
+
+
+def _rewrite_references(state_root: str, old_key: str, new_key: str) -> int:
+    """Repoint every reference to `old_key` at `new_key`. Returns how many it changed.
+
+    A re-key invalidates references the moving node does not own, and they are the half of
+    this operation most likely to rot silently: a `depends_on` naming a key that no longer
+    exists does not fail until something tries to order it, and a backlog `ref` pointing at
+    a vanished story reads as an unlinked promotion in `audit-issues` rather than as damage
+    this operation did.
+
+    Two kinds, both rewritten here: `depends_on` lists on any story or epic node, and the
+    `ref` field on open and resolved backlog items.
+    """
+    changed = 0
+    for _k, _sdir, node, path in _walk_story_nodes(state_root):
+        dep = node.get("depends_on")
+        if isinstance(dep, list) and old_key in dep:
+            for i, v in enumerate(dep):
+                if v == old_key:
+                    dep[i] = new_key
+            y, n = load_node(path)
+            if isinstance(n, dict) and isinstance(n.get("depends_on"), list):
+                n["depends_on"] = [new_key if v == old_key else v for v in n["depends_on"]]
+                save_node(y, n, path)
+                changed += 1
+
+    open_path = os.path.join(state_root, ISSUES_FILENAME)
+    if os.path.exists(open_path):
+        with issues_lock(open_path):
+            store = IssueStore(open_path)
+            hit = False
+            # PROPERTIES, not methods. `store.backlog()` raised
+            # `TypeError: 'CommentedSeq' object is not callable` and left the move
+            # half-applied -- the node had already been renamed and its key rewritten, so
+            # the tree kept a story at its new key with every reference still naming the
+            # old one. Every other call site in this file reads them correctly; this was
+            # the only one, and no test reached it because none created an issues.yaml.
+            for lst in (store.backlog, store.resolved):
+                for item in lst:
+                    if isinstance(item, dict) and item.get("ref") == old_key:
+                        item["ref"] = new_key
+                        hit = True
+            if hit:
+                store.save_open()
+                store.save_resolved()
+                changed += 1
+    return changed
+
+
+def _raise_sprint_high_water(state_root: str, epic_key: str, sprint_key: str,
+                             at_least: int) -> None:
+    """Raise a sprint's story-key high-water, so a departing key is never reissued.
+
+    WHY THIS IS NEEDED ON TOP OF THE ALLOCATOR. `_next_story_key`'s high-water only protects
+    keys it ISSUED. Every story that exists today predates it, so its sprint carries no
+    `next:` at all -- and once such a story moves away, nothing on disk or in the node
+    remembers its number and the floor drops back. The departure is the moment we learn the
+    key was in use, so that is where it gets recorded.
+
+    Monotonic by construction: it only ever raises. The caller holds the sprint's epic lock,
+    because a lost update here WOULD matter -- two concurrent departures raising to 5 and 7
+    could leave 5, and 6 would then be reissued to different work.
+    """
+    spath = sprint_file(state_root, epic_key, sprint_key)
+    if spath is None:
+        return                                   # no sprint node to record it on
+    y, node = load_node(spath)
+    if not isinstance(node, dict):
+        return
+    try:
+        stored = int(node.get("next") or 0)
+    except (TypeError, ValueError):
+        stored = 0
+    if stored >= at_least:
+        return
+    node["next"] = at_least
+    save_node(y, node, spath)
+
+
+def reparent_story(state_root: str, artifacts_root: str, story_key: str,
+                   to_epic: str, to_sprint: str) -> str:
+    """Move one planned story to another sprint, re-keying it. Returns the new key.
+
+    BOTH TREES MOVE TOGETHER. The state node and the story document are siblings with an
+    identical path suffix, and a re-parent that moved one without the other would break the
+    mirror the whole layout depends on. The document may not exist yet (a story planned but
+    not elaborated), which is fine; what is not fine is moving one of two that both exist.
+
+    GATE BEFORE WRITE. Everything that can refuse -- scope, existence, destination, key
+    availability -- is checked before the first byte moves. `migrate-engine.py` runs its
+    completeness checks after the write once, and an empty parse passed vacuously and then
+    deleted the source; this orders it the other way for the same reason.
+
+    PLANNED WORK ONLY. A story under `active/` or `archived/` carries actuals, calibration
+    samples and `events.jsonl` history keyed to its current key, none of which this moves.
+    Refusing is the scope rule, not a limitation to work around.
+    """
+    state_root = os.path.abspath(state_root)
+    artifacts_root = os.path.abspath(artifacts_root)
+    from_epic, from_sprint, _ = parse_story_key(story_key)
+    to_epic = canonical_epic_key(to_epic)
+    to_sprint = canonical_sprint_key(to_sprint)
+
+    # TWO LOCKS, SEQUENTIALLY, NEVER NESTED. `epic_node_lock` refuses to hold two epics at
+    # once and that guard is right: its re-entrancy counter is per lock FAMILY rather than per
+    # epic, so a nested acquire would silently skip the second flock and hand back the illusion
+    # of a lock. Taking them one after the other respects it and needs nothing widened.
+    #
+    # Phase 1 records the departing key in the SOURCE sprint's high-water. Between the phases
+    # another process can only read a source whose high-water is already raised, or race the
+    # same move and fail on a missing source -- both safe.
+    src_probe = story_file(state_root, from_epic + "-" + from_sprint + "-" + story_key[-3:])
+    if src_probe is not None and os.sep + "planned" + os.sep in src_probe + os.sep:
+        with epic_node_lock(state_root, from_epic):
+            _raise_sprint_high_water(state_root, from_epic, from_sprint,
+                                     int(story_key[-3:]) + 1)
+
+    # THE DESTINATION EPIC'S LOCK FOR THE REST.
+    #
+    # `epic_node_lock` refuses to hold two epics at once, and that guard is right: its
+    # re-entrancy counter is per lock FAMILY rather than per epic, so a nested acquire of a
+    # second epic would silently skip its flock and hand back the illusion of a lock. The
+    # answer is not to widen the primitive but to need less of it.
+    #
+    # What this operation actually read-modify-writes is the DESTINATION sprint's allocator.
+    # Nothing in the source epic is read-modify-written: its `epic.yaml` is untouched, and its
+    # sprint's `next` is a high-water that never decreases, so a departing story changes
+    # nothing there. `_require_epic_lock` guards `epic.yaml` writes specifically, and a
+    # re-parent makes none.
+    #
+    # The source side is safe without a lock because the move is a single rename: a concurrent
+    # second re-parent of the same story finds the source gone and fails cleanly, rather than
+    # both succeeding.
+    with epic_node_lock(state_root, to_epic):
+        # --- GATE -------------------------------------------------------------------
+        src_node = story_file(state_root, story_key)
+        if src_node is None:
+            raise PMError(3, f"story {story_key} not found under {state_root}")
+        if os.sep + "planned" + os.sep not in src_node + os.sep:
+            raise PMError(2, f"{story_key} is not in planned/ — reorg writes planned work "
+                             f"only; its actuals, calibration samples and events.jsonl "
+                             f"history are keyed to its current key and are not moved")
+        dest_sprint_node = sprint_file(state_root, to_epic, to_sprint)
+        if dest_sprint_node is None:
+            raise PMError(3, f"destination sprint {to_epic}-{to_sprint} does not exist — "
+                             f"create it before moving work into it")
+        # BOTH ENDS MUST BE PLANNED, not just the source. `sprint_file` resolves through
+        # `find_epic_dir`, which searches every bucket, so without this a planned story
+        # could be moved INTO an active or archived epic -- past the placement rule, which
+        # says an epic's directory lives in the folder named for its status and its stories
+        # travel with it. The story would then sit in `archived/` while still reading
+        # `status: backlog`, and the next `move-epic` would carry it somewhere nobody chose.
+        if os.sep + "planned" + os.sep not in dest_sprint_node + os.sep:
+            raise PMError(2, f"destination {to_epic}-{to_sprint} is not in planned/ — reorg "
+                             f"writes planned work only, at both ends of a move")
+        if (from_epic, from_sprint) == (to_epic, to_sprint):
+            return story_key                      # already there; a no-op, not an error
+
+        new_key = _next_story_key(state_root, artifacts_root, to_epic, to_sprint)
+        dest_node = os.path.join(os.path.dirname(dest_sprint_node), f"{new_key}.yaml")
+        if os.path.exists(dest_node):
+            raise PMError(2, f"allocator handed out {new_key} but {dest_node} exists")
+
+        src_doc = _story_doc_on_disk(artifacts_root, story_key)
+        dest_doc = None
+        if src_doc is not None:
+            slug = _doc_slug(src_doc, story_key)
+            dest_doc = os.path.join(artifacts_root, epic_dirname(to_epic),
+                                    sprint_dirname(to_sprint), "stories",
+                                    f"{new_key}{slug}.md")
+            if os.path.exists(dest_doc):
+                raise PMError(2, f"destination document already exists: {dest_doc}")
+
+        # --- WRITE ------------------------------------------------------------------
+        _git_or_plain_move(src_node, dest_node, state_root)
+        if src_doc is not None:
+            os.makedirs(os.path.dirname(dest_doc), exist_ok=True)
+            _git_or_plain_move(src_doc, dest_doc, artifacts_root)
+
+        from ruamel.yaml.scalarstring import SingleQuotedScalarString as SQ
+        y, node = load_node(dest_node)
+        if not isinstance(node, dict):
+            raise PMError(2, f"{dest_node} did not parse after the move")
+        node["key"] = SQ(new_key)
+        node["epic"] = SQ(to_epic)
+        node["sprint"] = SQ(to_sprint)
+        prev = node.get("previous_keys")
+        if not isinstance(prev, list):
+            prev = []
+        prev.append(story_key)                     # ordered, oldest first; never replaced
+        node["previous_keys"] = prev
+        node["updated_at"] = _now_iso()
+        save_node(y, node, dest_node)
+
+        if dest_doc is not None:
+            _rewrite_doc_key(dest_doc, story_key, new_key)
+
+        _rewrite_references(state_root, story_key, new_key)
+
+        # --- VERIFY -----------------------------------------------------------------
+        if story_file(state_root, story_key) is not None:
+            raise PMError(2, f"{story_key} still resolves after the move")
+        if story_file(state_root, new_key) is None:
+            raise PMError(2, f"{new_key} does not resolve after the move")
+        return new_key
+
+
+def _rewrite_doc_key(path: str, old_key: str, new_key: str) -> None:
+    """Repoint the story document's frontmatter `key:` at the new key.
+
+    Touches that one field and nothing else: the document is human-authored and everything
+    below the frontmatter belongs to its author.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError):
+        return                                    # a doc we cannot read is not ours to fix
+    out = re.sub(rf"^(key:\s*['\"]?){re.escape(old_key)}(['\"]?\s*)$",
+                 rf"\g<1>{new_key}\g<2>", text, count=1, flags=re.MULTILINE)
+    if out != text:
+        _atomic_text_write(path, out)
+
+
+def _git_or_plain_move(src: str, dest: str, cwd: str) -> None:
+    """`git mv`, falling back to a filesystem move with a LOUD warning.
+
+    Same contract as move_epic's: preserving history is why this moves files rather than
+    rewriting them, so a silent degradation to delete+add would defeat the point.
+    """
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    moved = False
+    reason = "git mv was not attempted"
+    try:
+        import subprocess
+        r = subprocess.run(["git", "mv", os.path.abspath(src), os.path.abspath(dest)],
+                           cwd=os.path.abspath(cwd), capture_output=True, check=False,
+                           text=True)
+        moved = r.returncode == 0
+        if not moved:
+            reason = (r.stderr.strip() or r.stdout.strip()
+                      or f"git mv exited {r.returncode}").replace("\n", " ")
+    except (OSError, ImportError) as e:
+        reason = f"could not run git: {e}"
+    if not moved:
+        import shutil
+        sys.stderr.write(
+            f"pm-status.py: WARNING — `git mv` failed ({reason}); falling back to a plain "
+            f"move of {src} -> {dest}. Git will see this as delete+add, not a rename, so "
+            f"`git log --follow` will not cross it.\n")
+        shutil.move(src, dest)
+
+
+def dump_plan(state_root: str) -> dict:
+    """The planned tree plus its read-only context, as one JSON-able structure.
+
+    WHY THIS VERB EXISTS. The reorg analyzer lives in `l3io-plan`'s own `scripts/` (ADR-0001:
+    single-consumer code lives in its skill), and check 26 forbids any file under `skills/`
+    from assembling a state path -- `pm-status.py` is the only place that resolves a key to a
+    location. So the analyzer cannot walk the tree; it asks for it. One read verb is the whole
+    interface between the resolver and every consumer that wants the shape of a plan.
+
+    WHAT IS AND IS NOT INCLUDED. `planned` carries the writable set, with the fields an
+    analyzer reasons over: `depends_on`, `estimate`, `classification` and `previous_keys`
+    (the last for `l3io-sync`, which needs it to distinguish re-keyed from deleted).
+    `active` carries
+    only KEYS and their dependencies -- enough to constrain ordering, nothing more, because
+    active work is read-only input and a consumer that could see its estimates would be
+    tempted to re-plan it. Archived work appears only as keys, for dependency satisfaction.
+
+    Read-only: takes no lock and writes nothing.
+    """
+    out = {"planned": [], "active": [], "archived": []}
+    for bucket, epic_key, epic_dir in iter_epic_dirs(state_root):
+        epath = os.path.join(epic_dir, "epic.yaml")
+        enode = {}
+        if os.path.exists(epath):
+            _, n = load_node(epath)
+            if isinstance(n, dict):
+                enode = n
+        if bucket != "planned":
+            out[bucket].append({
+                "key": epic_key,
+                "status": str(enode.get("status") or ""),
+                "depends_on": [str(v) for v in (enode.get("depends_on") or [])],
+            })
+            continue
+
+        epic = {
+            "key": epic_key,
+            "status": str(enode.get("status") or ""),
+            "depends_on": [str(v) for v in (enode.get("depends_on") or [])],
+            # Absent when lanes are not in use, which is the normal single-developer state.
+            # Consumers cannot read state directly (check 26), so this is the only way the
+            # partition reaches plan-graph.py.
+            "lane": str(enode["lane"]) if enode.get("lane") is not None else None,
+            "estimate": _plain(enode.get("estimate")),
+            "sprints": [],
+        }
+        for sname in sorted(os.listdir(epic_dir)):
+            sdir = os.path.join(epic_dir, sname)
+            spath = os.path.join(sdir, "sprint.yaml")
+            if not os.path.isdir(sdir) or not os.path.exists(spath):
+                continue
+            _, sn = load_node(spath)
+            sn = sn if isinstance(sn, dict) else {}
+            sprint = {
+                "key": str(sn.get("key") or ""),
+                "status": str(sn.get("status") or ""),
+                "estimate": _plain(sn.get("estimate")),
+                "stories": [],
+            }
+            for fname in sorted(os.listdir(sdir)):
+                if fname == "sprint.yaml" or not fname.endswith(".yaml"):
+                    continue
+                _, st = load_node(os.path.join(sdir, fname))
+                if not isinstance(st, dict):
+                    continue
+                sprint["stories"].append({
+                    "key": str(st.get("key") or ""),
+                    "status": str(st.get("status") or ""),
+                    "classification": str(st.get("classification") or ""),
+                    "depends_on": [str(v) for v in (st.get("depends_on") or [])],
+                    # The whole chain, oldest first. `l3io-sync` reads this to tell a
+                    # RE-KEYED story from a DELETED one: without it a reorg produces a
+                    # `missing_local` for the old key AND an `unmapped_local` for the new,
+                    # which pushes as a duplicate issue plus an orphaned one.
+                    "previous_keys": [str(v) for v in (st.get("previous_keys") or [])],
+                    "estimate": _plain(st.get("estimate")),
+                })
+            epic["sprints"].append(sprint)
+        out["planned"].append(epic)
+    return out
+
+
+def _plain(v):
+    """ruamel's CommentedMap/Seq -> plain dict/list/scalar, so json.dumps can take it."""
+    if isinstance(v, dict):
+        return {str(k): _plain(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_plain(x) for x in v]
+    return v
+
+
+def cmd_dump_plan(args) -> int:
+    # COMPACT, and `--pretty` when a human is reading it.
+    #
+    # Every consumer of this is a script that parses it — the reorg analyzer, the validator,
+    # the derivation, and the two plan-run advisories — and it is piped on every plan run.
+    # `indent=2` measured 16,895 B against 8,349 B compact on the same 10-epic/40-story tree:
+    # 2.09x the raw YAML it came from, versus 1.03x. Same data, half the bytes, and the only
+    # thing lost is readability for a person running it by hand, which `--pretty` restores.
+    pretty = bool(getattr(args, "pretty", False))
+    sep = None if pretty else (",", ":")
+    sys.stdout.write(json.dumps(dump_plan(args.state_root),
+                                indent=2 if pretty else None, separators=sep) + "\n")
+    return 0
+
+
+def retire_epic(state_root: str, epic_key: str, reason: str) -> str:
+    """Retire an epic: move it to `archived/` and record why. Returns the destination.
+
+    RETIREMENT IS EPIC-LEVEL, and that is the layout's doing rather than a simplification.
+    `planned/`, `active/` and `archived/` are folders of EPIC directories; sprints and stories
+    live inside one and have nowhere else to be. There is no place to put a single retired
+    story, so there is no verb for it.
+
+    A THIN WRAPPER OVER `move_epic`, deliberately. The move itself -- git mv, the lock, the
+    status write -- is already correct there and must not be reimplemented; this adds only the
+    two fields that distinguish "retired by a reorg, for this reason" from "archived because it
+    finished". Without them an undo could restore the directory but not the fact that a human
+    was told why it went.
+
+    NEVER DELETES. The spec is explicit: retire moves, and only an explicit request deletes.
+    """
+    if not str(reason or "").strip():
+        raise PMError(2, "retire-epic requires a --reason: an epic retired without one leaves "
+                         "nobody able to judge later whether it should come back")
+    dest = move_epic(state_root, epic_key, "archived")
+    with epic_node_lock(state_root, epic_key):
+        p = os.path.join(dest, "epic.yaml")
+        if os.path.exists(p):
+            from ruamel.yaml.scalarstring import SingleQuotedScalarString as SQ
+            y, node = load_node(p)
+            if isinstance(node, dict):
+                node["retired_reason"] = SQ(str(reason).strip())
+                node["retired_at"] = SQ(_now_iso())
+                save_node(y, node, p)
+    return dest
+
+
+def cmd_retire_epic(args) -> int:
+    try:
+        dest = retire_epic(args.state_root, args.epic, args.reason)
+    except PMError:
+        raise
+    except FileNotFoundError as e:
+        _die_notfound(str(e))
+    except (ValueError, FileExistsError) as e:
+        _die_usage(str(e))
+    sys.stdout.write(f"OK retire-epic {args.epic} -> {dest}\n")
+    return 0
+
+
+def cmd_reparent_story(args) -> int:
+    try:
+        new_key = reparent_story(args.state_root, args.artifacts_root, args.story,
+                                 args.to_epic, args.to_sprint)
+    except PMError:
+        raise
+    except FileNotFoundError as e:
+        _die_notfound(str(e))
+    except (ValueError, FileExistsError) as e:
+        _die_usage(str(e))
+    sys.stdout.write(f"OK reparent-story {args.story} -> {new_key}\n")
+    return 0
+
+
+# --------------------------------------------------------------------------------------
+# The reorg journal: what was done, why, and enough to put it back.
+# --------------------------------------------------------------------------------------
+
+REORG_LOG_FILENAME = "reorg-log.yaml"
+_REORG_OP_FIELDS = {
+    "reparent-story": {"story", "new_key", "from_epic", "from_sprint",
+                       "to_epic", "to_sprint"},
+    "retire-epic": {"epic", "reason", "from_status"},
+    "create-sprint": {"epic", "sprint"},
+}
+
+
+def reorg_log_path(state_root: str) -> str:
+    return os.path.join(state_root, REORG_LOG_FILENAME)
+
+
+_REORG_LOG_LOCK = {"depth": 0, "fh": None}
+
+
+@contextlib.contextmanager
+def reorg_log_lock(state_root: str):
+    """Exclusive lock over a whole reorg-log read-modify-write cycle.
+
+    Same reasoning as issues_lock: allocate an id -> append -> save is not atomic, and the
+    log is a single shared append target. The log file itself is COMMITTED -- it is the
+    traceback record a human reads months later -- so only its `.lock` sidecar is ignored,
+    which `_ensure_lock_ignore`'s existing `*.lock` rule already covers.
+
+    NEVER HELD ACROSS A MOVE. `reparent_story` and `move_epic` take `epic_node_lock`, and
+    the enforced order is epic-lock-first. `reorg-undo` therefore takes this lock to claim
+    an entry, RELEASES it, performs the moves, and takes it again to record the result.
+    """
+    with _file_lock(reorg_log_path(state_root) + ".lock", _REORG_LOG_LOCK, state_root):
+        yield
+
+
+def plan_shape_hash(state_root: str) -> str:
+    """A digest of WHERE planned work sits -- epic, sprint and story placement, nothing else.
+
+    THE GUARD UNDO RESTS ON. An undo computed against a tree that has moved on since the
+    reorg would put stories somewhere neither the user nor the journal intended: it replays
+    placements derived from a plan that no longer exists. Comparing this digest before acting
+    turns that from a silent wrong answer into a refusal.
+
+    PLACEMENT ONLY, DELIBERATELY. Estimates, titles, statuses and dependencies are excluded
+    because an undo moves nodes and nothing else -- re-estimating a story between the reorg
+    and the undo is ordinary work, and refusing over it would make the guard fire constantly
+    for a change it does not care about. Adding or removing a story DOES change placement,
+    and that is exactly the case the guard must catch.
+    """
+    plan = dump_plan(state_root)
+    rows = []
+    for e in plan.get("planned", []):
+        rows.append(f"E\t{e['key']}")
+        for sp in e.get("sprints", []):
+            rows.append(f"S\t{e['key']}\t{sp['key']}")
+            for st in sp.get("stories", []):
+                rows.append(f"T\t{e['key']}\t{sp['key']}\t{st['key']}")
+    body = "\n".join(sorted(rows))
+    return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def _load_reorg_log(state_root: str):
+    y, node = _load(reorg_log_path(state_root))
+    if not isinstance(node, dict):
+        node = {"version": 1, "next": 1, "entries": []}
+    node.setdefault("version", 1)
+    node.setdefault("next", 1)
+    if not isinstance(node.get("entries"), list):
+        node["entries"] = []
+    return y, node
+
+
+def _validate_reorg_record(rec) -> list:
+    """Every reason to refuse a record. Empty means accept.
+
+    AN OP WE CANNOT INVERT MUST NOT BE JOURNALED. The log's only purpose is to make an undo
+    possible, so recording an operation of a kind undo does not understand would hand a user
+    an entry that looks undoable and is not. Unknown kinds and missing fields are refusals.
+    """
+    errs = []
+    if not isinstance(rec, dict):
+        return ["the record must be a mapping with `rationale`, `pre_hash` and `operations`"]
+    if not str(rec.get("rationale") or "").strip():
+        errs.append("`rationale` is required and must be the proposal the user accepted, "
+                    "verbatim — an entry nobody can read is not a traceback record")
+    if not str(rec.get("pre_hash") or "").strip():
+        errs.append("`pre_hash` is required — capture it with `reorg-log --hash` BEFORE "
+                    "applying the first operation")
+    ops = rec.get("operations")
+    if not isinstance(ops, list) or not ops:
+        errs.append("`operations` must be a non-empty list")
+        return errs
+    for i, op in enumerate(ops):
+        if not isinstance(op, dict):
+            errs.append(f"operations[{i}]: each operation must be a mapping")
+            continue
+        kind = str(op.get("op") or "")
+        if kind not in _REORG_OP_FIELDS:
+            errs.append(f"operations[{i}]: unknown op {kind!r} — undo would not know how to "
+                        f"invert it, so journaling it would promise an undo that cannot run")
+            continue
+        missing = _REORG_OP_FIELDS[kind] - set(op)
+        if missing:
+            errs.append(f"operations[{i}] ({kind}): missing {sorted(missing)}")
+    return errs
+
+
+def record_reorg(state_root: str, rec: dict) -> str:
+    """Append one reorg to the journal. Returns the new entry id."""
+    errs = _validate_reorg_record(rec)
+    if errs:
+        raise PMError(2, "refusing this reorg record:\n  " + "\n  ".join(errs))
+    from ruamel.yaml.scalarstring import LiteralScalarString as LS
+    from ruamel.yaml.scalarstring import SingleQuotedScalarString as SQ
+    post = plan_shape_hash(state_root)
+    # A block scalar, not an escaped one-liner. The rationale is the proposal a human reads
+    # months later to decide whether to undo; `"...\n...\n"` is technically the same text and
+    # unreadable in the file it lives in. Block style needs every line to end in one.
+    rationale = str(rec["rationale"])
+    if "\n" in rationale:
+        rationale = LS(rationale if rationale.endswith("\n") else rationale + "\n")
+    with reorg_log_lock(state_root):
+        y, log = _load_reorg_log(state_root)
+        try:
+            n = int(log.get("next") or 1)
+        except (TypeError, ValueError):
+            n = 1
+        n = max(n, 1)
+        entry_id = f"R{n:04d}"
+        log["next"] = n + 1
+        log["entries"].append({
+            "id": SQ(entry_id),
+            "at": SQ(_now_iso()),
+            "rationale": rationale,
+            "pre_hash": SQ(str(rec["pre_hash"])),
+            "post_hash": SQ(post),
+            "operations": _plain(rec["operations"]),
+        })
+        _atomic_dump(y, log, reorg_log_path(state_root))
+    return entry_id
+
+
+def _find_entry(log: dict, entry_id: str):
+    for e in log.get("entries", []):
+        if isinstance(e, dict) and str(e.get("id")) == entry_id:
+            return e
+    return None
+
+
+def undo_reorg(state_root: str, artifacts_root: str, entry_id: str,
+               check_only: bool = False) -> dict:
+    """Put a recorded reorg back. Returns a result mapping.
+
+    UNDO IS THE FORWARD PATH RUN BACKWARDS, not a special restore. Each operation is inverted
+    with the same `reparent_story` / `move_epic` primitives that applied it, so an undo takes
+    the same locks, the same gates and the same git-mv handling. A bespoke restore path would
+    be a second implementation of the riskiest code in the file, exercised only in the rare
+    case nobody tests by hand.
+
+    REVERSE ORDER, for the same reason the forward order exists: a story that left a retiring
+    epic has to come back AFTER that epic is un-archived, or it has nowhere to land.
+
+    KEYS ARE NOT RESTORED, AND CANNOT BE. The allocator's high-water never decreases -- that
+    is what stops a freed key being reissued to different work and silently retargeting its
+    remote issue. So an undone story returns to its original SPRINT with a new number, and the
+    chain of `previous_keys` records the whole journey. Undo restores placement, not keys; the
+    result mapping names every key that changed so the caller can say so.
+
+    A CREATED SPRINT IS LEFT STANDING. Undoing it would mean deleting a directory, and
+    deletion is the one thing this feature never does unasked. An empty sprint is inert; the
+    result reports it so a user can remove it deliberately.
+    """
+    with reorg_log_lock(state_root):
+        y, log = _load_reorg_log(state_root)
+        entry = _find_entry(log, entry_id)
+        if entry is None:
+            raise PMError(3, f"no reorg journal entry {entry_id} in "
+                             f"{reorg_log_path(state_root)}")
+        if entry.get("undone_at"):
+            raise PMError(2, f"{entry_id} was already undone at {entry['undone_at']}")
+        if entry.get("undo_started_at") and not check_only:
+            raise PMError(2, f"{entry_id} has an undo in flight since "
+                             f"{entry['undo_started_at']} — if it failed part way, the "
+                             f"journal and `dump-plan` together say how far it got")
+        now_hash = plan_shape_hash(state_root)
+        want = str(entry.get("post_hash") or "")
+        if now_hash != want:
+            raise PMError(2,
+                          f"refusing to undo {entry_id}: the planned tree has changed since "
+                          f"the reorg was applied (recorded {want}, now {now_hash}). An undo "
+                          f"replays placements derived from a plan that no longer exists, so "
+                          f"it would move work somewhere nobody chose. Re-plan instead.")
+        if check_only:
+            return {"id": entry_id, "undoable": True, "hash": now_hash,
+                    "operations": len(entry.get("operations") or [])}
+        from ruamel.yaml.scalarstring import SingleQuotedScalarString as SQ
+        entry["undo_started_at"] = SQ(_now_iso())
+        _atomic_dump(y, log, reorg_log_path(state_root))
+
+    # --- the moves, with NO journal lock held: they take epic locks, which come first ---
+    restored, left_standing = {}, []
+    for op in reversed(list(entry.get("operations") or [])):
+        kind = str(op.get("op") or "")
+        if kind == "retire-epic":
+            move_epic(state_root, str(op["epic"]), str(op.get("from_status") or "planned"))
+            with epic_node_lock(state_root, str(op["epic"])):
+                p = epic_file(state_root, str(op["epic"]))
+                if p:
+                    ey, en = load_node(p)
+                    if isinstance(en, dict):
+                        en.pop("retired_reason", None)
+                        en.pop("retired_at", None)
+                        save_node(ey, en, p)
+        elif kind == "reparent-story":
+            back = reparent_story(state_root, artifacts_root, str(op["new_key"]),
+                                  str(op["from_epic"]), str(op["from_sprint"]))
+            restored[str(op["new_key"])] = back
+        elif kind == "create-sprint":
+            left_standing.append(f"{op['epic']}-{op['sprint']}")
+
+    from ruamel.yaml.scalarstring import SingleQuotedScalarString as SQ
+    after = plan_shape_hash(state_root)
+    with reorg_log_lock(state_root):
+        y, log = _load_reorg_log(state_root)
+        entry = _find_entry(log, entry_id) or {}
+        entry["undone_at"] = SQ(_now_iso())
+        entry["undo_restored"] = {str(k): SQ(v) for k, v in sorted(restored.items())}
+        entry["post_undo_hash"] = SQ(after)
+        _atomic_dump(y, log, reorg_log_path(state_root))
+    return {"id": entry_id, "undone": True, "restored": restored,
+            "sprints_left_standing": left_standing, "hash": after}
+
+
+def cmd_reorg_log(args) -> int:
+    if args.hash:
+        sys.stdout.write(plan_shape_hash(args.state_root) + "\n")
+        return 0
+    if args.record:
+        from ruamel.yaml.error import YAMLError
+        y = _yaml()
+        try:
+            with open(args.record, encoding="utf-8") as fh:
+                rec = y.load(fh)
+        except FileNotFoundError:
+            _die_notfound(f"record file {args.record}")
+        except (OSError, UnicodeDecodeError, YAMLError) as e:
+            _die_usage(f"could not read the record file {args.record}: {e}")
+        entry_id = record_reorg(args.state_root, _plain(rec))
+        sys.stdout.write(f"OK reorg-log recorded {entry_id}\n")
+        return 0
+
+    _, log = _load_reorg_log(args.state_root)
+    entries = [e for e in log.get("entries", []) if isinstance(e, dict)]
+    if args.show:
+        e = _find_entry(log, args.show)
+        if e is None:
+            _die_notfound(f"reorg journal entry {args.show}")
+        entries = [e]
+    if args.format == "json":
+        sys.stdout.write(json.dumps({"entries": [_plain(e) for e in entries]},
+                                    indent=2) + "\n")
+        return 0
+    if not entries:
+        sys.stdout.write("no reorgs recorded\n")
+        return 0
+    for e in entries:
+        state = "undone" if e.get("undone_at") else "applied"
+        sys.stdout.write(f"{e.get('id')}  {e.get('at')}  {state}  "
+                         f"{len(e.get('operations') or [])} operation(s)\n")
+        if args.show:
+            sys.stdout.write("\n" + str(e.get("rationale") or "").rstrip() + "\n\n")
+            for op in e.get("operations") or []:
+                sys.stdout.write(f"  - {json.dumps(_plain(op), sort_keys=True)}\n")
+    return 0
+
+
+def cmd_reorg_undo(args) -> int:
+    try:
+        res = undo_reorg(args.state_root, args.artifacts_root, args.id, args.check)
+    except PMError:
+        raise
+    except FileNotFoundError as e:
+        _die_notfound(str(e))
+    except (ValueError, FileExistsError) as e:
+        _die_usage(str(e))
+    if args.check:
+        sys.stdout.write(f"OK {res['id']} can be undone "
+                         f"({res['operations']} operation(s))\n")
+        return 0
+    sys.stdout.write(f"OK reorg-undo {res['id']} — {len(res['restored'])} story(ies) "
+                     f"restored\n")
+    for old, new in sorted(res["restored"].items()):
+        sys.stdout.write(f"  {old} -> {new}\n")
+    if res["sprints_left_standing"]:
+        sys.stdout.write("  sprints created by the reorg were left in place (empty, never "
+                         "deleted unasked): " + ", ".join(res["sprints_left_standing"]) + "\n")
+    return 0
+
+
 def cmd_move_epic(args) -> int:
     to = getattr(args, "to", None) or "archived"
     try:
@@ -7616,14 +9134,20 @@ def build_parser() -> argparse.ArgumentParser:
     di.set_defaults(func=cmd_story_doc_init)
 
     sdo = sub.add_parser("set-depends-on",
-                         help="append dependency keys to an epic or story node's depends_on list")
+                         help="add or remove dependency keys on an epic or story node's depends_on list")
     sdo.add_argument("--state-root", required=True)
     sdo.add_argument("--epic")
     sdo.add_argument("--story", help="a story node's depends_on takes story keys")
     sdo.add_argument("--sprint")
-    sdo.add_argument("--add", action="append", required=True, metavar="KEY",
+    sdo.add_argument("--add", action="append", metavar="KEY",
                      help="repeatable; idempotent, order preserved. Epic keys for an epic "
                           "node, story keys for a story node")
+    sdo.add_argument("--remove", action="append", metavar="KEY",
+                     help="repeatable; idempotent. Refused while story edges still cross "
+                          "that boundary, unless --force")
+    sdo.add_argument("--force", action="store_true",
+                     help="remove even while story edges justify it — for a sequencing "
+                          "decision no story edge expresses")
     sdo.set_defaults(func=cmd_set_depends_on)
 
     imp = sub.add_parser("import-node",
@@ -7893,6 +9417,15 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--cause", default="cli", choices=["cli", "triage", "plan-intake"])
     pi.set_defaults(func=cmd_promote_issue)
 
+    si = sub.add_parser("schedule-issue",
+                        help="attach open BL items to a story that already exists")
+    si.add_argument("--state-root", required=True)
+    si.add_argument("--key", required=True, action="append", help="repeatable")
+    si.add_argument("--story", required=True, help="an existing story key E{nnn}-S{nn}-{nnn}")
+    si.add_argument("--session-id", dest="session_id", default=None)
+    si.add_argument("--cause", default="cli", choices=["cli", "triage", "plan-intake"])
+    si.set_defaults(func=cmd_schedule_issue)
+
     au = sub.add_parser("audit-issues", help="structural integrity checks over the backlog")
     au.add_argument("--state-root", required=True)
     au.add_argument("--format", choices=["text", "json"], default="text")
@@ -8006,11 +9539,71 @@ def build_parser() -> argparse.ArgumentParser:
                     help="the one ADR home to scan (default: <git top-level>/docs/adr)")
     ar.set_defaults(func=cmd_adr_reserve)
 
+    dp = sub.add_parser("dump-plan",
+                        help="the planned tree plus read-only context, as JSON (read-only)")
+    dp.add_argument("--state-root", required=True)
+    dp.add_argument("--pretty", action="store_true",
+                    help="indent the JSON for reading by hand; the default is compact, "
+                         "which halves the bytes every consumer pipes")
+    dp.set_defaults(func=cmd_dump_plan)
+
+    re_ = sub.add_parser("retire-epic",
+                         help="move an epic to archived/ and record why (never deletes)")
+    re_.add_argument("--state-root", required=True)
+    re_.add_argument("--epic", required=True)
+    re_.add_argument("--reason", required=True)
+    re_.set_defaults(func=cmd_retire_epic)
+
+    rp = sub.add_parser("reparent-story",
+                        help="move a planned story to another sprint, re-keying it")
+    rp.add_argument("--state-root", required=True)
+    rp.add_argument("--artifacts-root", required=True)
+    rp.add_argument("--story", required=True)
+    rp.add_argument("--to-epic", required=True)
+    rp.add_argument("--to-sprint", required=True)
+    rp.set_defaults(func=cmd_reparent_story)
+
+    rl = sub.add_parser("reorg-log",
+                        help="the reorg journal: hash the plan, record a reorg, list or show")
+    rl.add_argument("--state-root", required=True)
+    rl.add_argument("--hash", action="store_true",
+                    help="print the planned tree's placement digest and exit (read-only); "
+                         "capture this BEFORE applying, as the record's pre_hash")
+    rl.add_argument("--record", default="",
+                    help="a YAML record (rationale, pre_hash, operations) to append")
+    rl.add_argument("--list", action="store_true", help="list recorded reorgs (the default)")
+    rl.add_argument("--show", default="", help="show one entry in full, by id")
+    rl.add_argument("--format", choices=("text", "json"), default="text")
+    rl.set_defaults(func=cmd_reorg_log)
+
+    ru = sub.add_parser("reorg-undo",
+                        help="put a recorded reorg back, if the plan has not moved on since")
+    ru.add_argument("--state-root", required=True)
+    ru.add_argument("--artifacts-root", required=True)
+    ru.add_argument("--id", required=True, help="the journal entry id, e.g. R0001")
+    ru.add_argument("--check", action="store_true",
+                    help="test the guard and report, without moving anything")
+    ru.set_defaults(func=cmd_reorg_undo)
+
     nt = sub.add_parser("notice",
                         help="record a one-time-ever advisory notice; exit 1 if already shown")
     nt.add_argument("--state-root", required=True)
     nt.add_argument("--key", required=True)
     nt.set_defaults(func=cmd_notice)
+
+    ai = sub.add_parser("sync-agent-instructions",
+                        help="create, replace or remove the l3io block in the running "
+                             "harness's AI instruction file")
+    ai.add_argument("--runtime", required=True,
+                    choices=("claude", "codex", "copilot", "other"))
+    ai.add_argument("--project-root", required=True)
+    ai.add_argument("--body-file")
+    ai.add_argument("--version")
+    g = ai.add_mutually_exclusive_group(required=True)
+    g.add_argument("--apply", action="store_true")
+    g.add_argument("--remove", action="store_true")
+    g.add_argument("--check", action="store_true")
+    ai.set_defaults(func=cmd_sync_agent_instructions)
 
     p.add_argument("--version", action="version", version=f"pm-status.py {PM_STATUS_VERSION}")
     return p

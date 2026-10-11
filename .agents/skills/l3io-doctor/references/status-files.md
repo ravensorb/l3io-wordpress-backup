@@ -161,6 +161,7 @@ title: 'Epic 001 — Foundation'
 goal: 'Stand up the core platform'
 status: in-progress
 depends_on: []                            # epic keys; read by l3io-plan
+lane: 2                                   # OPTIONAL. 1..999. Which lane owns this epic
 estimate:                                 # ranges at epic/sprint level
   man_hours_low: 40
   man_hours_high: 60
@@ -190,12 +191,15 @@ orchestration:                            # sprint/epic only — the orchestrato
   model: claude-sonnet-5
 orchestration_sampled_at: '2026-08-16T22:34:03Z'  # replay guard; set-actual --block orchestration
 # no `sprints:` — sprint-NN/ directories are the list
+retired_reason: 'nothing depends on it'   # retire-epic only; why it went
+retired_at: '2026-10-09T16:00:00Z'
 ```
 
 ```yaml
 # state/active/epic-001/sprint-01/sprint.yaml
 key: 'S01'
 epic: 'E001'                              # back-reference; path must agree
+next: 7                                   # story-key high-water; pm-status.py only
 title: 'Sprint 01 — Foundation'
 status: in-progress
 estimate:
@@ -221,6 +225,17 @@ actual:
 # no `stories:` — E001-S01-*.yaml files are the list
 ```
 
+**`next` on a sprint is a high-water mark and never decreases.** Story keys are allocated as
+`max(sprint.next, highest-on-disk + 1)`, so a vacated number is never reissued. Deriving from
+the disk alone was safe only while stories could merely appear; the moment one can MOVE, a
+freed key handed to a different story silently retargets that key's remote issue in
+`l3io-sync`'s mapping — nothing errors, and the issue now tracks different work. The disk is
+still consulted alongside `next`, which is what makes this need no migration (an absent `next`
+behaves exactly as before) and no repair verb (a `next` that is somehow too low cannot cause a
+reuse, because the disk floor still applies). The only visible consequence is that keys go
+sparse where a story is deleted, instead of the next one backfilling the hole.
+
+
 **Sprint status lifecycle:** `backlog → in-progress → review → done`. `review` means **every
 child story is at `review` and none has been closed** — the sprint's work is written and
 awaiting verdicts, as distinct from `in-progress`, where stories are still being produced.
@@ -233,6 +248,8 @@ an epic spans sprints that can be in different states, so it has no single meani
 key: 'E001-S01-003'
 epic: 'E001'                              # back-references; path must agree
 sprint: 'S01'
+previous_keys:                            # append-only, oldest first; written by reparent-story
+- 'E007-S02-004'                          #   a single previous_key would lose the first hop
 title: 'Implement token ledger'
 status: review
 classification: complex
@@ -643,6 +660,30 @@ per-node-kind path variable — every path below `{pm_state_root}` is resolved i
 `pm-status.py` from keys, never bound by a step file.
 
 ## 11. Dependency fields
+
+### `lane` — which lane owns this epic
+
+**Optional, epic-only, and a NUMBER.** Absent means lanes are not in use, which is the normal
+state for a single-developer project and must stay completely inert.
+
+`lane` partitions planned work across developers who each have their **own clone**. That is why
+it exists at all: every `flock` in `pm-status.py` guards one filesystem, and two clones share
+none, so concurrency stops being mediated by locks and becomes mediated by `git merge`. With
+each lane writing only its own `epic-{nnn}/` directory, git merges disjoint paths cleanly and
+the collision surface shrinks to four shared files.
+
+**1 epic = 1 lane**, and sprints and stories inherit it from the directory they live in — they
+never carry their own. That is the invariant the rest rests on: it makes the lane graph the
+epic graph with relabelled nodes, so every cross-lane question is answered by relabelling a
+computation that already exists rather than by a second traversal. Moving work between lanes
+therefore means moving a story between epics, which is a reorg (`/l3io-plan reorg`) and re-keys
+the story.
+
+**It is a number because a word cannot be screened.** A lane is a slot in a partition, never a
+person — who works a lane is recorded in the **gitignored** user config, so a name cannot reach
+the repository. `backend` and `sarah` are the same shape, so any pattern permitting the first
+permits the second; numbering closes that by construction. `set-field` refuses anything else,
+and refuses `lane` on a sprint or story outright.
 
 `depends_on` on an epic node (`epic.yaml`): list of epic keys that must be `status: done`
 before this epic can start. Present regardless of which status folder the epic currently

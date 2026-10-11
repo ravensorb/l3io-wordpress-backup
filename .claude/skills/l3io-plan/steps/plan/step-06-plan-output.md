@@ -128,6 +128,73 @@ per-epic belongs in `{plan_filename}` only.
 
 ## 5. Output plan summary
 
+### 5.0 Compute the critical path, here and not earlier
+
+`step-05` deliberately computes only the **structural** longest chain, because the estimates a
+weighted path needs are written by `step-estimate`, which runs after it. This step builds the
+per-phase estimate blocks in §2 from epic estimates read *after* that, so this is the first
+point in the run where the numbers are both present and current. Compute it from the §2 blocks
+you already have — do not re-read state, and do not inherit a binding from `step-05`.
+
+Phases run in order and epics inside a `parallel: true` phase run concurrently, so:
+
+- `{total_time_low}` = Σ over phases of that phase's `elapsed_hours_low`
+- `{total_time_high}` = Σ over phases of that phase's `elapsed_hours_high`
+
+  These are the §2 phase values, which already apply the right rule per phase — `max` of the
+  phase's epics when parallel, `sum` when sequential. Summing them across phases is correct
+  because phases themselves are always sequential.
+
+- `{critical_path_str}` = the **pacesetter chain**: in each phase, the epic with the largest
+  `estimate.elapsed_hours_high`, joined in phase order with ` → `. That epic is the one whose
+  duration the phase cannot finish before, so it is what a phase's wall-clock is actually made
+  of. A sequential phase contributes its single epic.
+
+If no epic carries an estimate — possible only if `step-estimate` was skipped — bind
+`{critical_path_str}` to the structural `{longest_chain_epics}` from step-05 and omit the hours
+in parentheses. Say "structural" on the line so nobody reads an unweighted chain as a costed
+one.
+
+**Why this moved.** Reading the path from `step-05` meant a first plan always printed "all
+epics in phase order, no differentiation" — step-05's own fallback, taken because state held no
+estimates yet — and a re-plan printed the previous generation's, overwritten two steps later.
+`{critical_path_str}`, `{total_time_low}` and `{total_time_high}` were never bound anywhere
+either: each appeared exactly once, at its use site below.
+
+### 5.1 Check sprint load — the one signal that needs the estimates
+
+**The structural check already ran, at `step-05-dependency-graph.md` §6.** Every finding a
+reorg can act on needs only `depends_on`, so it is reported three steps earlier, before a user
+pays to estimate a shape they may be about to change. Do not repeat it here.
+
+What could not run there is sprint load, because it needs the `elapsed_hours` that
+`step-estimate` has only just written:
+
+```bash
+uv run {pm_status} dump-plan --state-root {pm_state_root} \
+  | uv run {skill-root}/scripts/plan-graph.py analyze
+```
+
+Bind `{balance_advisory}` from the `sprint-imbalance` findings alone:
+
+- One or more present →
+  `⚖ Sprint load is uneven: {epic} sprints range {low}–{high} hrs (ratio {ratio}). /l3io-plan reorg can rebalance them within the dependency graph.`
+- None → bind the empty string and print nothing.
+
+**`sprint-imbalance` is `info`, not `warn`, and this advisory is the reason it still exists.**
+A reorg cannot make work smaller, so load is never a reason to re-place work on its own — it is
+an impact, reported (ADR-0011). But an epic whose sprints differ several-fold is still worth
+saying out loud, because rebalancing *within* the structure is a legal move and the user has no
+other way to learn that it is available.
+
+**Ignore every other finding here.** The `warn` ones were reported at step-05 and acting on
+them twice in one run would train a reader to skip both.
+
+If the analyzer fails or is absent, bind the empty string and carry on — a missing advisory must
+never fail a plan run that otherwise succeeded.
+
+### 5.2 Print it
+
 Always print the human-readable summary:
 
 ```
@@ -141,11 +208,14 @@ Phase 2 (sequential): {epic_keys} — est. {time_low}–{time_high} hrs wall-clo
 Critical path: {critical_path_str} ({total_time_low}–{total_time_high} hrs)
 
 Readiness: {readiness}
+{balance_advisory}
 Plan written to: {planning_artifacts}/{plan_filename}
 Stable pointer: {planning_artifacts}/plan-output-meta.yaml
 
 Next: run /l3io-execute to start execution.
 ```
+
+When `{balance_advisory}` is empty, omit the line entirely rather than printing a blank one.
 
 If `{plan_output}` is `console`, skip writing files in steps 3 and 4 — print only.
 

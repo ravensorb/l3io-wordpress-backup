@@ -1,0 +1,92 @@
+generated: '2026-09-26T15:46:32Z'
+plan_version: 1
+readiness: amber
+stories_elaborated: 0
+total_epics_in_scope: 6
+phases:
+- phase: 1
+  parallel: false
+  epics:
+  - E002
+  dependencies: []
+  estimate:
+    estimates_as_of: '2026-09-26T15:46:32Z'
+    wall_clock_hours_low: 27.47
+    wall_clock_hours_high: 31.21
+    man_hours_low: 82.4
+    man_hours_high: 93.63
+    hitl_hours_low: 4.78
+    hitl_hours_high: 5.43
+    tokens_k_min: 1931
+    tokens_k_max: 2194
+    cost_low: 7.98
+    cost_high: 9.06
+    confidence: medium
+- phase: 2
+  parallel: true
+  epics:
+  - E003
+  - E004
+  - E005
+  - E006
+  dependencies:
+  - E002
+  estimate:
+    estimates_as_of: '2026-09-26T15:46:32Z'
+    wall_clock_hours_low: 25.85
+    wall_clock_hours_high: 29.38
+    man_hours_low: 164.79
+    man_hours_high: 187.27
+    hitl_hours_low: 9.38
+    hitl_hours_high: 10.66
+    tokens_k_min: 3858
+    tokens_k_max: 4384
+    cost_low: 15.91
+    cost_high: 18.06
+    confidence: medium
+- phase: 3
+  parallel: false
+  epics:
+  - E007
+  dependencies:
+  - E003
+  estimate:
+    estimates_as_of: '2026-09-26T15:46:32Z'
+    wall_clock_hours_low: 14.54
+    wall_clock_hours_high: 16.53
+    man_hours_low: 43.62
+    man_hours_high: 49.57
+    hitl_hours_low: 2.5
+    hitl_hours_high: 2.84
+    tokens_k_min: 1021
+    tokens_k_max: 1161
+    cost_low: 4.21
+    cost_high: 4.79
+    confidence: medium
+readiness_detail:
+- key: E002
+  status: amber
+  gaps:
+  - 'E002-S02-008: functional ACs only — no interface-level detail'
+- key: E003
+  status: amber
+  gaps:
+  - 'E003-S02-003: functional ACs only — no interface-level detail'
+- key: E004
+  status: green
+  gaps: []
+- key: E005
+  status: amber
+  gaps:
+  - 'E005-S01-002: functional ACs only — no interface-level detail'
+- key: E006
+  status: amber
+  gaps:
+  - 'E006-S01-001: functional ACs only — no interface-level detail'
+- key: E007
+  status: green
+  gaps: []
+arch_gate_summary:
+  ran: false
+  reviewers: []
+  findings: []

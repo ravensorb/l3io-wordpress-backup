@@ -209,6 +209,56 @@ When `doctor=absent`, print exactly once at activation (do not repeat later):
 
 Continue to section 3 either way.
 
+## 2.6. Offer the agent instruction block, once per harness
+
+A project installed under one harness has no block in another harness's instruction file.
+Check, and if the block is absent offer it **once ever, per harness**. This is **advisory and
+never blocking**: it fires at activation, the user started this run for something else, and
+interrupting it to ask about a documentation file is disproportionate. Print the offer and
+continue. (The health check, `/l3io-doctor`, is the second surface, where interruption is
+expected.) `{runtime}` is the value bound in section 2.
+
+```bash
+uv run {pm_status} sync-agent-instructions --runtime {runtime} \
+  --project-root {project-root} --check
+rc=$?
+if [ "$rc" -eq 1 ]; then
+  uv run {pm_status} notice --state-root {pm_state_root} --key ai-rules-missing:{runtime}
+fi
+```
+
+`--check` is read-only and takes no lock. Act on its exit code:
+
+- **0** — the block is present. Say nothing.
+- **1** — absent. Run `notice`. When it exits 0, print one line and continue:
+  `This project's {runtime} instruction file has no l3io block — an agent without it does not
+  know project state is machine-written. Add it with /l3io-doctor (health check).`
+  When `notice` exits 1 it has already been offered for this harness; say nothing. Keying per
+  harness is the point — a single global key would mean the second harness is never asked.
+- **2** — the file is not valid UTF-8, or its `l3io:begin`/`l3io:end` markers are ambiguous.
+  **Do not offer to add a block, and never repair this on your own judgement.** The script
+  refused precisely because it could not tell which marker was real, and picking one is the
+  damage it exists to prevent.
+
+  **Refusing to guess is not the same as refusing to help.** Deciding which block is right is
+  the user's; finding the markers and splicing the lines is not, and handing that back gives
+  them the easy half. So:
+
+  1. **Show the ambiguity.** Name each `l3io:begin` and `l3io:end` with its line number and a
+     few surrounding lines — "two `l3io:begin`, lines 42 and 118; the one at 42 has no
+     matching end" — so they can see what they are choosing between. For invalid UTF-8, name
+     the byte offset instead; there is nothing to choose, only to report.
+  2. **Ask which reading is right.** The one question only a human can answer.
+  3. **Make the edit yourself**, touching nothing outside the markers they resolved, and say
+     what you changed.
+
+  If they decline to choose, say so and continue — never edit on a guess, and never block the
+  run. Print one line while unresolved —
+  `⚠️  {runtime} instruction file could not be read for the l3io block (invalid UTF-8 or
+  ambiguous markers). Tell me which block is current and I will fix it.` — and continue. This
+  line is not recorded in the notice ledger, so it repeats until the file is fixed.
+- Any other exit — say nothing and continue; a documentation probe never fails the run.
+
 ## 3. Detect state layout
 
 Count how many of these three layouts are present — do **not** stop at the first match:
