@@ -4,8 +4,8 @@
   "ref_type": "tag",
   "ref_name": "v1.0.0",
   "repository": {
-    "full_name": "ravensorb/py-wordpress-backup",
-    "name": "py-wordpress-backup",
+    "full_name": "ravensorb/l3io-wordpress-backup",
+    "name": "l3io-wordpress-backup",
     "default_branch": "main",
     "owner": { "login": "ravensorb" }
   }

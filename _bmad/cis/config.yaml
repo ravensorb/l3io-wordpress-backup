@@ -7,7 +7,7 @@ visual_tools: intermediate
 
 # Core Configuration Values
 user_name: Sanderson
-project_name: py-wordpress-backup
+project_name: l3io-wordpress-backup
 communication_language: English
 document_output_language: English
 output_folder: "{project-root}/_bmad-output"

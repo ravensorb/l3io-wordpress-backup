@@ -1,6 +1,6 @@
 # Handoff — wordpress-backup
 
-- **Repo:** `py-wordpress-backup` (being republished as the distribution `l3io-wp-backup`)
+- **Repo:** `l3io-wordpress-backup` (published as the distribution `l3io-wordpress-backup`)
 - **Branch:** `main` (renamed from `master` this session; CI triggers follow `main`)
 - **Written:** 2026-09-27 (KB pointers verified by reading note content, not search hits)
 - **Status:** active

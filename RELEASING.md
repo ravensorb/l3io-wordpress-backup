@@ -14,9 +14,9 @@ All three share the PEP 420 namespace `l3io.wp` (ADR-0012, AD-27).
 
 | # | Distribution | Import | Repository |
 |---|--------------|--------|------------|
-| 1 | `l3io-wordpress-config` | `l3io.wp.config` | `py-wpconfigr` |
-| 2 | `l3io-wp-database` | `l3io.wp.database` | `py-wordpress-database` |
-| 3 | `l3io-wordpress-backup` | `l3io.wp.backup` | `py-wordpress-backup` |
+| 1 | `l3io-wordpress-config` | `l3io.wp.config` | `l3io-wordpress-config` |
+| 2 | `l3io-wordpress-database` | `l3io.wp.database` | `l3io-wordpress-database` |
+| 3 | `l3io-wordpress-backup` | `l3io.wp.backup` | `l3io-wordpress-backup` |
 
 ## The gate
 
