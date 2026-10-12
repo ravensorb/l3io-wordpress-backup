@@ -210,3 +210,62 @@ deleted the broader one instead of leaving both. Do the same.
 home-lab and its sibling repos go to `home-lab/handoff/Handoff - <agent name>` in the KB
 (`note_type: handoff`, `status: active`); **this repo is not one of those**, which is why this
 note lives in the repo instead.
+
+---
+
+## Update — 2026-10-12: rename, BMad 3.2.4, and the hardening brief
+
+### Done since 2026-09-27
+
+- [done] **Repository renamed** on GitHub `ravensorb/py-wordpress-backup` →
+  `ravensorb/l3io-wordpress-backup` (GitHub redirects the old URL), and the local folder to
+  `l3io-wordpress-backup`. `5a11434` moves the live references: project URLs, the
+  `l3io-wordpress-database` uv git source (still `rev = f7966ce`), `uv.lock`, act events,
+  `RELEASING.md`'s family table (which also still said `l3io-wp-database`), BMad
+  `project_name`. Dated `_bmad-output` artifact paths such as
+  `architecture-py-wordpress-backup-2026-09-15/` keep their names.
+- [done] l3io 3.2.4 was already committed (`6ebc9bd`). `71a1b8c` self-installs
+  `_bmad/scripts/pm-status.py` 3.4.2. All three repos now carry the same copy.
+- [done] `../*` scope is unaffected by the folder rename: `scripts/check-cicd-alignment.py`
+  globs the parent directory. Ran it 2026-10-12: 3 repos, 0 findings.
+
+### Found 2026-10-12 — verify, then act
+
+- [todo] **The rewrite has never reached GitHub.** `origin/main` is still `5798e94`
+  ("Bump version: 0.2.20 → 0.2.21"), and `main` is 36 commits ahead. GitHub Actions has no
+  runs for this repository. The "CI green" claims above are `act` runs only. Pushing is
+  Shawn's call.
+- [todo] **A full `pytest` fails at collection** on a fresh
+  `uv sync --locked --all-extras --dev`. The 4 legacy files in `tests/classes/` import
+  `wpbackup2`, which imports `wpconfigr` and `wpdatabase2`; neither is in the lock.
+  `ci.yml`'s test job runs the same unqualified `uv run pytest`, so the first real GitHub run
+  is expected to fail the same way. Not caused by the rename: the lock gained only a URL.
+  `tests/contracts` alone: 41 passed, 2 skipped.
+- [todo] Stale legacy surface beside the rewrite: `README.md` documents only `wpbackup2`
+  (Python 3.6, AWS flags); `setup.py`/`setup.cfg` (bumpversion 0.2.21) and the root `test.py`
+  predate the hatch build. The `wpbackup2/` package is the only working implementation while
+  `src/l3io/wp/backup/` is placeholders and the CLI exits "not implemented". What to keep
+  depends on AD-22's frozen surface; do not delete on inference.
+
+### This session's brief
+
+Shawn's goal is to make each package **rock solid and stable**, in release order: config,
+then database, then this repo. Here that means:
+
+1. `/l3io-doctor`, then reconcile this file.
+2. The **remediation route for the E002 arch gate is still Shawn's decision** (see "Decisions
+   pending"). Ask, do not pick.
+3. Make the test suite and CI agree with the lock (the collection failure above) before any
+   push, so the first GitHub run is meaningful.
+
+### Notes for this session
+
+- Secrets: Infisical, project **`home-lab-discovery`**; this machine has a machine identity
+  configured and the session is approved to read from it. Pass `--env=prod`; without it
+  `infisical secrets get` returns empty with exit 0.
+- Legacy PyPI `wpbackup2` 0.2.21 and `wpdatabase2` 0.0.15 are ours and link the old URLs,
+  which redirect. The plan is `_bmad-output/implementation-artifacts/handoffs/04-legacy-names-and-registrations.md`,
+  done last.
+- PyPI trusted publishing binds owner/repo/workflow. No `l3io-wordpress-*` name exists on
+  PyPI or TestPyPI (checked 2026-10-12), so register publishers under the **new** repository
+  names.
