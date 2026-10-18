@@ -260,7 +260,7 @@ then database, then this repo. Here that means:
 
 ### Notes for this session
 
-- Secrets: Infisical, project **`home-lab-discovery`**; this machine has a machine identity
+- Secrets: Infisical, project **`home-lab`**, path `/ci/act/l3io-wordpress-backup`; this machine has a machine identity
   configured and the session is approved to read from it. Pass `--env=prod`; without it
   `infisical secrets get` returns empty with exit 0.
 - Legacy PyPI `wpbackup2` 0.2.21 and `wpdatabase2` 0.0.15 are ours and link the old URLs,

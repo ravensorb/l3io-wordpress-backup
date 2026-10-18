@@ -29,12 +29,13 @@ ACT_FILES := .act.vars .act.env .act.secrets
 # environment — so `infisical run` supplies them and act picks them up. Nothing
 # secret is ever written to disk in this repo.
 #
-#   INFISICAL_ENV         environment to read (default: local)
-#   INFISICAL_PROJECT_ID  optional; omit once `make infisical-init` has written
-#                         .infisical.json, which resolves the project implicitly
-INFISICAL_ENV ?= local
-INFISICAL_RUN := infisical run --env=$(INFISICAL_ENV) \
-                 $(if $(INFISICAL_PROJECT_ID),--projectId $(INFISICAL_PROJECT_ID),) --
+#   INFISICAL_ENV         environment to read (default: prod)
+#   INFISICAL_PROJECT_ID  the home-lab project (ADR-0008); an environment value wins
+#   INFISICAL_PATH        this repo's CI leaf, /ci/<platform>/<repo>
+INFISICAL_ENV ?= prod
+INFISICAL_PROJECT_ID ?= 7ca0e01b-28f6-4a61-b901-5fe834e1661a
+INFISICAL_PATH ?= /ci/act/l3io-wordpress-backup
+INFISICAL_RUN := infisical run --env=$(INFISICAL_ENV) --projectId $(INFISICAL_PROJECT_ID) --path $(INFISICAL_PATH) --
 # Bare `-s NAME` entries in ~/.actrc that act prompts for. They only need to be
 # non-empty. GITHUB_TOKEN is deliberately NOT here: act uses it to fetch actions,
 # so a placeholder makes every dry-run leg fail for the wrong reason.
