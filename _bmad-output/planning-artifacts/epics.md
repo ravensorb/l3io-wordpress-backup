@@ -63,18 +63,19 @@ This document provides the complete epic and story breakdown for l3io-wp-backup,
 
 ### Additional Requirements
 
-- **29 architecture invariants (AD-1…AD-29)** bind every story. The ones most likely to be
+- **30 architecture invariants (AD-1…AD-30)** bind every story. The ones most likely to be
   violated by a plausible implementation: AD-4 (Dry Run is adapter selection, never a
   conditional), AD-5 (no function consuming a Restore Mode may default it), AD-17 (phase
   order is an ordered enum, not a diagram), AD-18 (a killed Run must be recoverable),
   AD-25 (the CLI flag matrix is a total function), AD-27 (PEP 420 namespace, no `__init__.py`
   above the leaf), AD-28 (escape the database name in a GRANT), AD-29 (existence is answered
   by the administrator, never inferred from a failed login).
-- **13 ADRs** carry the mechanism decisions: ports-and-adapters (0001), credential transport
-  by `--defaults-file` (0003), PyMySQL (0004), WP-CLI delegation (0005), archive format and
-  chunked AES-GCM under Argon2id (0006), uv packaging (0007), optional boto3 (0008), Python
-  floor (0009), the regex parser's accepted scope (0010), observability (0011), naming (0012),
-  CI replayable under act (0013).
+- **ADRs** carry the mechanism decisions: ports-and-adapters (0001), PyMySQL (0004), WP-CLI
+  delegation (0005), uv packaging (0007), optional boto3 (0008), Python floor (0009), the
+  regex parser's accepted scope (0010), observability (0011), naming (0012), CI replayable
+  under act (0013), **`age` encryption through `l3io-wp-database` (0014, superseding 0006)**
+  and **credentials to MySQL client tools only through `l3io-wp-database` (0015,
+  superseding 0003)**.
 - **10 binding decisions** in `reviews/TRIAGE-divergence-pairs.md`, including three that a
   default implementation gets wrong: `--whatIf` keeps its spelling, `--log-level` defaults to
   INFO not CRITICAL, and a v1 Archive is gzipped.
@@ -83,12 +84,24 @@ This document provides the complete epic and story breakdown for l3io-wp-backup,
   preserved. `--only-appointed-in-asg` is accepted and fails with an explanation.
 - **Archive compatibility (AD-23)**: v0 archives (manifest-less `.tar.gz` with `database.sql`
   and `wp-root/`) are read by default, permanently. Writing is v1 only.
-- **Dependencies are finished and consumable**: `l3io-wp-database` (public, rev-pinned) and
-  `l3io-wp-config` beneath it. `quote_grant_database` and `quote_identifier` are imported,
-  never reimplemented.
+- **Dependencies are finished and consumable**: `l3io-wordpress-database` **v0.1.0**
+  (rev-pinned to its tag's commit) and `l3io-wordpress-config` v0.1.0 beneath it. Backup
+  calls database's `dump`, `load(replace=)`, `survey`, `ensure`, `drop_database`,
+  `CredentialChain` and `age` stream encryption; it never invokes a MySQL client tool,
+  writes an option file or issues `CREATE DATABASE`/`GRANT`/`DROP DATABASE` (ADR-0015).
+  **Passphrase** encryption arrives in database **0.2.0** (`passphrase=`, ADR-0014).
+- **Exit codes** are the family table from database's `cli.Exit` — 0 OK, 1 FAILED, 2 USAGE,
+  3 REFUSED, 4 CREDENTIALS, 5 UNREACHABLE, 7 NOT_READY; 6 is reserved for the family —
+  plus backup-only codes for verification failure and lock conflict (AG-26).
+- **Storage Target addressing** (AG-27): a target is a scheme-qualified string. `file://…`
+  is accepted, a bare path means `file:`, any other scheme is a named error. The grammar
+  lives in `domain/`, owned by Epic 2, because AD-22 makes accepted values a breaking
+  surface and v1.1's remote schemes must not need a major bump.
 - **Stage 1 is complete**: PEP 420 layout under `src/l3io/wp/backup/`, uv packaging at 1.0.0,
   contract gates (`tools/check_purity.py`, `tools/check_mode_defaults.py`, `tests/contracts/`),
-  old tree removed, all five CI jobs green locally under act with the working tree intact.
+  all five CI jobs green locally under act with the working tree intact. The legacy
+  `wpbackup2/` tree is **kept on disk, excluded** from tests and lint, until AD-22 decides
+  what it becomes (guarded by `tests/contracts/test_legacy_test_exclusion.py`).
 
 ### UX Design Requirements
 
@@ -98,11 +111,12 @@ _Not applicable — this product has no graphical surface. It ships a CLI and an
 
 | Requirement | Epic |
 |---|---|
-| FR-1, FR-2, FR-3, FR-4, FR-5, FR-10 | Epic 2 — Back up a site |
-| FR-6, FR-7, FR-8, FR-9, FR-19 | Epic 3 — Restore without destroying it |
-| FR-14, FR-15, FR-20, FR-21, FR-27, FR-28 | Epic 4 — Run it unattended |
-| FR-22, FR-23, FR-24, FR-30 | Epic 5 — Embed it in Python automation |
-| FR-11, FR-12, FR-13, FR-29 | Epic 6 — Move a site to a new URL |
+| FR-1, FR-2, FR-3, FR-15, FR-19 (backup path), FR-20, FR-21, FR-28 | Epic 2 — Walking skeleton — take a backup and prove it |
+| FR-6, FR-7, FR-8, FR-9, FR-19 (restore path) | Epic 3 — Restore a site without destroying it |
+| FR-4, FR-5, FR-10 | Epic 4 — Archive lifecycle — exclusions, legacy reads, encryption |
+| FR-14, FR-27 | Epic 5 — Credential providers and environment readiness |
+| FR-22, FR-23, FR-24, FR-30 | Epic 6 — Embed it in Python automation |
+| FR-11, FR-12, FR-13, FR-29 | Epic 7 — Move a site to a new URL |
 | FR-25, FR-26 | **delivered by Epic 1** (Stage 1) and enforced continuously |
 | FR-16, FR-17, FR-18 | **out of scope** — v1.1 (remote storage, retention, scheduling) |
 | NFR-1…NFR-8 | cross-cutting; asserted per epic by the contract gates |
@@ -111,9 +125,9 @@ _Not applicable — this product has no graphical surface. It ships a CLI and an
 
 | # | Epic | Depends on | Owns exclusively | Stories |
 |---|---|---|---|---|
-| 2 | **Walking skeleton — back up and prove it** | Epic 1 | `domain/*`, `ports/*`, `cli/parser.py`, `adapters/{tar,subprocess,credentials_transport,lock}` | 8 |
+| 2 | **Walking skeleton — take a backup and prove it** | Epic 1 | `domain/*` (including `domain/archive_format` and its v0 classifier), `ports/*`, `core/backup`, `cli/*`, `adapters/{tar,database,store,lock}` | 8 |
 | 3 | **Restore without destroying it** | Epic 2 | `core/restore`, `adapters/{journal,staging}` | 5 |
-| 4 | **Archive lifecycle** | Epic 2 | `adapters/crypto`, `domain/archive_format` (v0 classifier), `core/exclusions` | 3 |
+| 4 | **Archive lifecycle** | Epic 2 | `adapters/crypto`, `core/exclusions`, the v0 fixture Archives and their tests | 3 |
 | 5 | **Credential providers and readiness** | Epic 2 | `adapters/{credential_providers,preflight}` | 2 |
 | 6 | **Embed in Python automation** | Epic 2 | `api/*`, `adapters/tracing` | 4 |
 | 7 | **Move a site to a new URL** | Epic 3 | `adapters/{wpcli,config_writer}` | 4 |
@@ -126,6 +140,15 @@ Epic 1 ──▶ Epic 2 ──┬──▶ Epic 3 ──▶ Epic 7
 ```
 
 **Epics 3, 4, 5 and 6 run in parallel.** Four agents, no shared files.
+
+**Ownership notes (arch gate AG-1, AG-2, 2026-10-20).** `domain/archive_format` is Epic 2's
+alone, including the pure v0 classifier: AD-23 requires it single-owner and Epic 3 consumes
+`ArchiveView` in the same phase Epic 4 runs. Epic 4 owns the v0 *fixtures and tests* that
+exercise it. `core/backup` (FR-1, FR-2), the local `adapters/store` (AD-20's
+temp-then-`os.replace`, AG-27's grammar) and all of `cli/` (AD-16 Run Context, AD-10
+logging, AD-4 binding, AD-25's flag table, AD-26's chain) are Epic 2's. `adapters/database`
+is the one place that calls `l3io-wp-database` (ADR-0015); it replaces the former
+`subprocess` and `credentials_transport` adapters, which this package no longer needs.
 
 **Why this shape, and what it costs.** The organising constraint is not story
 independence — it is *which files two agents would edit at once*. Under the previous
@@ -146,7 +169,10 @@ spellings, and each is where a plausible fix would break them. *Supply chain (FR
 was delivered by Epic 1 and is enforced continuously by the clean-install gate.
 
 **Sprint split.** Epic 2 is eight stories and gates everything, so it splits: sprint 1 is
-the archive path (2.1–2.3), sprint 2 the run machinery (2.4–2.8). Epic 3 carries NFR-1 and
+the archive path (2.1–2.3), sprint 2 the run machinery (2.4–2.8). *(Under review, AG-28:
+with ADR-0015, story 2.1's Dump comes from database's `dump`, so it no longer needs story
+2.4's transport. Whether 2.4 and the Run Context move into sprint 1 is decided after
+elaboration.)* Epic 3 carries NFR-1 and
 splits at the safety boundary: sprint 1 restore and refusal (3.1–3.2), sprint 2 snapshot,
 honest reporting and recoverability (3.3–3.5). Epics 4–7 are single sprints.
 
@@ -156,7 +182,7 @@ honest reporting and recoverability (3.3–3.5). Epics 4–7 are single sprints.
 
 One operator-visible capability (`backup` and `verify` both working end to end) that necessarily lands every shared contract: the Site Descriptor, the archive format, the `ports/` Protocols, the Run Context, the CLI parser, and the no-op command adapters that make Dry Run structural. **Sequential — it blocks everything else, and that is its job.**
 
-**Owns exclusively:** `domain/*`, `ports/*`, `cli/parser.py`, `adapters/{tar,subprocess,credentials_transport,lock}`
+**Owns exclusively:** `domain/*` (including `domain/archive_format`), `ports/*`, `core/backup`, `cli/*`, `adapters/{tar,database,store,lock}`
 
 ### Story 2.1: Produce an archive of a site's files and database
 
@@ -172,6 +198,8 @@ So that I have something to restore from.
 **Given** a Site Root containing a readable `wp-config.php`
 **When** a backup runs naming only that directory
 **Then** one Archive is produced containing a Dump, the Site Root tree and a Manifest
+**And** with no Credential Provider given, the database credentials are resolved from that `wp-config.php` (FR-1)
+**And** the Dump is produced by `l3io-wp-database`'s `dump`; this package invokes no MySQL client tool (ADR-0015)
 **And** the Site is byte-identical afterwards — file mtimes, database contents and `wp-config.php` unchanged
 **And** the Archive becomes visible at its destination only once complete and verifiable (NFR-2)
 **And** no step reads the whole Archive or Dump into memory (AD-21)
@@ -187,10 +215,11 @@ So that I can take a fast partial backup when that is all I need.
 
 **Acceptance Criteria:**
 
-**Given** the documented Backup Scope values `files`, `db` and `all`
+**Given** the Backup Scope values `files`, `database` and `all` (PRD Glossary, FR-2), accepted on the frozen CLI as `--mode files|db|all` (AD-22)
 **When** each one is passed
 **Then** the behaviour matches the name, and no accepted value silently falls through to another
-**And** `db` produces a complete Archive containing a Dump and a Manifest, never a loose dump file and no Archive
+**And** the CLI value `db` maps to the domain value `database` in exactly one place in `cli/`, and the domain never spells it `db`
+**And** `database` produces a complete Archive containing a Dump and a Manifest and no Site Root members, never a loose dump file and no Archive
 **And** `files` produces an Archive whose Manifest records that no Dump is present
 
 ### Story 2.3: Verify an archive without touching a site
@@ -209,7 +238,7 @@ So that I find out before a restore rather than during one.
 **Then** it reports pass or fail and makes no write outside its own temporary workspace
 **And** a truncated or corrupted Archive fails
 **And** a Manifest declaring a Dump that is absent is a verification failure, not a restore-time surprise
-**And** verification runs automatically before any destructive restore step
+**And** the result carries `integrity` (`VERIFIED` or `STRUCTURAL_ONLY`), not only pass or fail, so a v0 Archive passes as `STRUCTURAL_ONLY` (AD-23)
 
 ### Story 2.4: Supply credentials without exposing them
 
@@ -222,13 +251,10 @@ So that backing up a site does not leak the site.
 
 **Acceptance Criteria:**
 
-**Given** any invocation of `mysqldump` or `mysql`
-**When** the argument vector is constructed
-**Then** it contains no password — asserted against the vector itself, not by reading the call site
-**And** credentials travel in a `[client]` option file at mode `0600` in the per-Run workspace, passed as `--defaults-file` before any other option
-**And** `--defaults-extra-file` is never used, because it is additive and an ambient `~/.my.cnf` can silently redirect the run to another server
-**And** `MYSQL_PWD` is never used
-**And** the option file is removed on both the success and the failure path, and its mode and removal are asserted
+**Given** any backup or restore that touches the database
+**When** credentials must reach a MySQL client tool
+**Then** they get there only through `l3io-wp-database`'s `dump` and `load`, which pass them through an anonymous-pipe option file (database ADR-0002); this package builds no argument vector and no option file for a client tool, guarded by `tests/contracts/test_no_mysql_client.py` (ADR-0015)
+**And** `MYSQL_PWD` is never set by this package
 **And** no credential appears in any log record at any level, asserted against captured structured and stdlib records across a full backup and a full restore
 **And** every `repr` and any exception raised to a caller is clean — a traceback is log output under another name
 
@@ -248,7 +274,7 @@ So that I can pull one run out of a week of logs.
 **Then** every record carries the same Run ID, including those emitted around subprocess boundaries
 **And** the Run ID is reported at the start and end of the run
 **And** logging is configured once at a composition root and never in a library module
-**And** `wpconfigr`'s stdlib records are pulled into the same structured stream without that package taking a logging dependency (AD-2, AD-10)
+**And** `l3io-wp-config`'s (`l3io.wp.config`) stdlib records are pulled into the same structured stream without that package taking a logging dependency (AD-2, AD-10)
 **And** a library caller can bind their own correlation ID and see it on these records
 **And** each phase emits `phase`, `duration_ms`, `exit_code` and `bytes` as fields, so `jq` over a log file is sufficient
 
@@ -266,7 +292,8 @@ So that my scheduler can retry a transient fault and alert on a real one.
 **Given** any run
 **When** it ends
 **Then** success exits 0 and every failure path exits non-zero
-**And** documented distinct codes separate at minimum usage error, verification failure, missing external dependency, credential failure, lock conflict and operation failure
+**And** the codes are the family table (database's `cli.Exit`: 0 OK, 1 FAILED, 2 USAGE, 3 REFUSED, 4 CREDENTIALS, 5 UNREACHABLE, 7 NOT_READY; 6 reserved) plus backup-only codes for verification failure and lock conflict, each documented
+**And** the test covering every code derives its scope from the enum, never a hand-kept list
 **And** invoking with no subcommand is an error, not a silent success
 **And** no failure path returns a value the process then discards
 **And** the code table lives in `domain/` as the source of truth, not scattered across the CLI
@@ -277,17 +304,20 @@ So that my scheduler can retry a transient fault and alert on a real one.
 
 
 As an operator,
-I want to see what a restore would do before it does it,
+I want to see what a backup would do before it does it,
 So that I can check the plan against a production site safely.
 
 **Acceptance Criteria:**
 
-**Given** any operation that can modify a Site or a Storage Target
-**When** it runs as a Dry Run
-**Then** verification, credential resolution, preflight and planning all execute for real
+**Given** a backup run as a Dry Run
+**When** it runs
+**Then** credential resolution, preflight and planning all execute for real
 **And** the actions it would take are reported in order
-**And** the Site and every Storage Target are unchanged afterwards
+**And** the Site and the Storage Target are unchanged afterwards — the `ArchiveStore` command adapter is a no-op
+**And** the plan is equal across the real and the no-op adapter sets
 **And** no `if dry_run:` conditional exists anywhere outside a composition root — a Dry Run binds real queries and no-op commands (AD-4)
+
+*(The restore half of FR-19 — "what a restore would do" — is Epic 3's, AG-29.)*
 
 ### Story 2.8: Prevent two runs colliding on one site
 
@@ -319,7 +349,7 @@ The safety work, and the epic where getting it wrong destroys a customer's site.
 
 ### Story 3.1: Restore files and database from an archive
 
-**Implements:** FR-6
+**Implements:** FR-6, FR-19 (restore path)
 
 
 As an operator,
@@ -335,6 +365,8 @@ So that I can recover from a bad change.
 **And** a mode that does not name file removal removes no files; one that does not name database removal drops nothing
 **And** phases execute as a subsequence of the ordered `RestorePhase` enum, so reordering is unrepresentable (AD-17)
 **And** a test exists per mode asserting both what it touches and what it does not
+**And** Verification (story 2.3) runs automatically before the first destructive step, and a failure stops the run with nothing changed *(moved from story 2.3, AG-29)*
+**And** a restore run as a Dry Run reports its actions in order and leaves the Site and every Storage Target unchanged, by binding no-op command adapters (AD-4) *(moved from story 2.7, AG-29)*
 
 ### Story 3.2: Refuse to overwrite a non-empty target
 
@@ -368,7 +400,7 @@ So that a bad restore is reversible.
 **Given** a destructive restore against an existing Site
 **When** the run begins
 **Then** a Safety Snapshot Archive is written before the first destructive operation
-**And** it is verified after writing, and encrypted when encryption is configured
+**And** it is verified after writing, and encrypted when encryption is configured — to the configured `age` recipients now, or under the AD-26 passphrase once `l3io-wp-database` 0.2.0 ships (ADR-0014)
 **And** its scope is derived from the Restore Mode, covering everything that mode may destroy
 **And** it is written outside the Site Root and outside any web-served directory, and its path is reported
 **And** if it cannot be written and verified, the destructive restore does not proceed
@@ -389,9 +421,9 @@ So that I am not told "done" when nothing happened.
 **When** it completes
 **Then** it either restored, or exited non-zero stating why
 **And** encountering an existing database is never silently treated as success
-**And** it reports which of the database and user it created
-**And** every existence check uses administrator credentials — a failed login by the account being provisioned is evidence about the account, never about the database (AD-29)
-**And** any `GRANT` escapes `_` and `%` in the database name via the shared function imported from `l3io-wp-database` (AD-28)
+**And** it reports which of the database and user it created, from `l3io-wp-database`'s `EnsureResult` (`created_database`, `created_user`, `password_set`, `granted`)
+**And** existence is read from database's `survey` with administrator credentials — a failed login by the account being provisioned is evidence about the account, never about the database (AD-29)
+**And** provisioning is database's `ensure`; this package issues no `CREATE DATABASE`, `GRANT` or `DROP DATABASE` itself, so AD-28's escaping is database's (ADR-0015)
 
 ### Story 3.5: Survive being killed mid-restore
 
@@ -409,7 +441,8 @@ So that a power cut does not silently produce a half-restored site that still bo
 **Then** a durable Run Journal records the phase that was interrupted and what would undo it
 **And** a later run refuses to proceed until that journal is resolved, naming the interrupted phase
 **And** `wp-config.php` is written to a temporary file and `os.replace`d, so a partial config is never observable
-**And** the Dump loads into a staging database, with the live name switched only by that atomic write after the load is checked
+**And** the Dump loads into a staging database through `l3io-wp-database`'s `ensure` and `load(replace=)`, with the live name switched only by that atomic write after the load is checked
+**And** the database that loses the cutover is removed with database's `drop_database`, never by SQL issued here
 **And** an interrupted load therefore leaves the live site on its original database, untouched
 
 ---
@@ -466,13 +499,15 @@ So that a file containing every user record is not readable by whoever finds it.
 
 **Acceptance Criteria:**
 
-**Given** a supplied passphrase
+**Given** encryption configured with `age` recipients, or with a passphrase
 **When** a backup runs with encryption
-**Then** the Archive yields no plaintext database or file content to an inspector without the key
-**And** the KDF salt and parameters are recorded in the unencrypted Manifest, and the key never is
-**And** a wrong passphrase raises a distinct named error, not a generic corruption error (key commitment)
-**And** the passphrase never appears in process arguments
+**Then** each payload member is `age`, encrypted through `l3io-wp-database`, and the Archive yields no plaintext database or file content to an inspector without the key (ADR-0014)
+**And** any encrypted member decrypts with the stock `age -d`, without this package
+**And** the Manifest records which members are encrypted and carries no key material
+**And** a wrong key or passphrase raises a distinct named error, not a generic corruption error
+**And** no key or passphrase appears in process arguments, logs or exceptions
 **And** the passphrase resolution chain is shared verbatim by the CLI and the library (AD-26)
+**And** recipient/identity encryption builds on database v0.1.0; the passphrase path lands with database **0.2.0** (`passphrase=`), and until then a passphrase-only configuration is refused naming that release
 
 ---
 
@@ -499,6 +534,7 @@ So that I do not have to put them in a cron line.
 **And** resolution is an explicit call returning a frozen value, never a property getter performing I/O (AD-9)
 **And** no provider silently substitutes one credential for another — absent admin credentials is an error naming what is missing
 **And** a library caller can supply their own provider without subclassing an internal type
+**And** the chain is composed from `l3io-wp-database`'s `CredentialChain` (first present wins; a failing provider stops the chain), not a second implementation here
 
 ### Story 5.2: Fail before starting when a required tool is missing
 
