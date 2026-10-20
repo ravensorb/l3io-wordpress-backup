@@ -313,11 +313,19 @@ Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy
   named error; story 2.7 restated on the backup path, restore clauses to E003; AG-1/2/4
   ownership as recommended; the six document defects verified and to be fixed. The sprint
   split (AG-28) is decided once story 2.4's shape is known.
-- [blocked] **Encryption: Shawn chose streaming passphrase encryption from
-  `l3io-wordpress-database` 0.2.0** (2026-10-20). Verified absent from v0.1.0 and every
-  database branch; pyrage 1.4.0's `passphrase` module is one-shot over whole bytes, and its
-  streaming calls take recipients only. Requested from the database session the same day.
-  AD-6, AD-26, ADR-0006's supersession and story 4.3 wait on its answer.
+- [done] **Encryption decided** (Shawn, 2026-10-20): backup's archives are `age`, through
+  `l3io-wordpress-database`; ADR-0006 is superseded. Recipient/identity encryption is built
+  on database v0.1.0 now. Passphrase encryption (AD-26's chain) arrives in database 0.2.0 as
+  `passphrase=` on `encrypt`/`decrypt`/`dump`/`load`, after an upstream pyrage contribution
+  adds streaming `passphrase.encrypt_io`/`decrypt_io` (pyrage 1.4.0 is one-shot only; the Rust
+  `age` crate already streams). Rejected: buffering, hand-rolled scrypt+STREAM, the `age`
+  CLI. Design: database's `_bmad-output/planning-artifacts/plans/2026-10-20-plan-4-passphrase-stream.md`.
+  Asked database to make stream-level `encrypt`/`decrypt` public in 0.2.0 (v0.1.0 exports
+  only `generate_identity`).
+- [blocked] **Passphrase archives wait on database 0.2.0**, then pin
+  `l3io-wordpress-database[encryption]>=0.2,<0.3`. Story 4.3's passphrase ACs and the
+  passphrase parts of 3.3 and 5.1 are elaborated against plan-4's API, marked as landing
+  with that release.
 - [blocked] **Requests from `l3io-wordpress-database` that change design or documents:**
   supersede ADR-0006 with `age` via `pyrage`; move AD-7/ADR-0003 ownership to database;
   rewire stories 2.1/2.4/3.4/3.5/5.1 to the database API (these overlap the gate route,
