@@ -107,3 +107,28 @@ Write the story files only. Do not edit `epics.md`, the spine, ADRs, state YAML 
 other file. Your final line is exactly one of `DONE — <n> stories elaborated`,
 `BLOCKED: <reason>` or `FAILED: <reason>`, preceded by one line per story naming any
 `OPEN:` item.
+
+## Epic 2 is elaborated (3b30baf) — reuse its names, do not invent parallel ones
+
+Epics 3–7 build on contracts Epic 2's stories now define. Read the relevant E002 story
+(`_bmad-output/implementation-artifacts/epic-002/sprint-0*/stories/`) before naming
+anything it already names. Established there:
+
+- Modules: `domain/{archive_format,errors,exit_codes,flag_map,site,storage_target,lock,backup_scope}.py`;
+  `ports/{archive,database,lock,preflight,clock}.py`; `core/{backup,verify}.py`;
+  `adapters/{tar,database,redaction,noop}.py`; `cli/{parser,context,logging,exit,scope,backup,verify}.py`.
+- Types: `SiteDescriptor`, `RunContext` (+ `RunContextActiveError`, joining semantics),
+  `ArchiveView`, `ArchiveProbe`, `ArchiveStore` / `LocalArchiveStore` / `NoopArchiveStore`,
+  `VerificationResult` (carries `integrity`), `SiteLock` / `LockHandle` / `LockHolder`
+  (re-entrant for the holder's Run), `ExitCode` (0,1,2,3,4,5,7 family; 8
+  `VERIFICATION_FAILED`, 9 `LOCKED`; 6 reserved), the `BackupError` hierarchy in
+  `domain/errors.py` (`RefusedError`, `CredentialsError`, `VerificationFailedError`, …).
+- Conventions: every port is split into queries and commands (AD-4); a Dry Run binds
+  no-op commands from `adapters/noop.py`; one redaction implementation in
+  `adapters/redaction.py` that every epic reuses; `cli/exit.py::exit_code_for` is the one
+  failure→code mapping, and **a later epic maps to an existing `ExitCode`, never adds one** —
+  if it needs a new kind, write `OPEN:` naming it.
+- Ownership: anything under `domain/`, `ports/`, `cli/`, `core/backup` and
+  `adapters/{tar,database,store,lock,redaction,noop}` is Epic 2's. A later story that needs
+  a change there writes it as a dependency on Epic 2 (`OPEN:` if Epic 2's stories do not
+  already provide it), never as its own edit.
