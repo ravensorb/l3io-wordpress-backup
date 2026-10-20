@@ -125,12 +125,12 @@ _Not applicable — this product has no graphical surface. It ships a CLI and an
 
 | # | Epic | Depends on | Owns exclusively | Stories |
 |---|---|---|---|---|
-| 2 | **Walking skeleton — take a backup and prove it** | Epic 1 | `domain/*` (including `domain/archive_format` and its v0 classifier), `ports/*`, `core/backup`, `cli/*`, `adapters/{tar,database,store,lock}` | 8 |
+| 2 | **Walking skeleton — take a backup and prove it** | Epic 1 | `domain/*` (including `domain/archive_format` and its v0 classifier), `ports/*`, `core/backup`, `cli/*`, `adapters/{tar,database,store,lock,config_writer}` | 8 |
 | 3 | **Restore without destroying it** | Epic 2 | `core/restore`, `adapters/{journal,staging}` | 5 |
 | 4 | **Archive lifecycle** | Epic 2 | `adapters/crypto`, `core/exclusions`, the v0 fixture Archives and their tests | 3 |
 | 5 | **Credential providers and readiness** | Epic 2 | `adapters/{credential_providers,preflight}` | 2 |
 | 6 | **Embed in Python automation** | Epic 2 | `api/*`, `adapters/tracing` | 4 |
-| 7 | **Move a site to a new URL** | Epic 3 | `adapters/{wpcli,config_writer}` | 4 |
+| 7 | **Move a site to a new URL** | Epic 3 | `adapters/wpcli`, the relocation logic in `core/` | 4 |
 
 ```
 Epic 1 ──▶ Epic 2 ──┬──▶ Epic 3 ──▶ Epic 7
@@ -149,6 +149,9 @@ temp-then-`os.replace`, AG-27's grammar) and all of `cli/` (AD-16 Run Context, A
 logging, AD-4 binding, AD-25's flag table, AD-26's chain) are Epic 2's. `adapters/database`
 is the one place that calls `l3io-wp-database` (ADR-0015); it replaces the former
 `subprocess` and `credentials_transport` adapters, which this package no longer needs.
+`adapters/config_writer` moved from Epic 7 to Epic 2 (2026-10-20): restore's `DB_NAME`
+cutover (AD-18) writes `wp-config.php` before relocation exists. Epic 7 keeps `adapters/wpcli`
+and the relocation logic, and calls the writer.
 
 **Why this shape, and what it costs.** The organising constraint is not story
 independence — it is *which files two agents would edit at once*. Under the previous
@@ -169,10 +172,11 @@ spellings, and each is where a plausible fix would break them. *Supply chain (FR
 was delivered by Epic 1 and is enforced continuously by the clean-install gate.
 
 **Sprint split.** Epic 2 is eight stories and gates everything, so it splits: sprint 1 is
-the archive path (2.1–2.3), sprint 2 the run machinery (2.4–2.8). *(Under review, AG-28:
-with ADR-0015, story 2.1's Dump comes from database's `dump`, so it no longer needs story
-2.4's transport. Whether 2.4 and the Run Context move into sprint 1 is decided after
-elaboration.)* Epic 3 carries NFR-1 and
+the archive path (2.1–2.3), sprint 2 the run machinery (2.4–2.8). *(AG-28, decided
+2026-10-20: stories 2.5 — Run Context, workspace, logging — and 2.6 — exit codes — move into
+sprint 1, because sprint 1's stories need both; 2.4 stays, since ADR-0015 removed its
+transport dependency. Applied by `/l3io-plan reorg` once elaboration is complete, because the
+move re-keys both stories.)* Epic 3 carries NFR-1 and
 splits at the safety boundary: sprint 1 restore and refusal (3.1–3.2), sprint 2 snapshot,
 honest reporting and recoverability (3.3–3.5). Epics 4–7 are single sprints.
 
@@ -182,7 +186,7 @@ honest reporting and recoverability (3.3–3.5). Epics 4–7 are single sprints.
 
 One operator-visible capability (`backup` and `verify` both working end to end) that necessarily lands every shared contract: the Site Descriptor, the archive format, the `ports/` Protocols, the Run Context, the CLI parser, and the no-op command adapters that make Dry Run structural. **Sequential — it blocks everything else, and that is its job.**
 
-**Owns exclusively:** `domain/*` (including `domain/archive_format`), `ports/*`, `core/backup`, `cli/*`, `adapters/{tar,database,store,lock}`
+**Owns exclusively:** `domain/*` (including `domain/archive_format`), `ports/*`, `core/backup`, `cli/*`, `adapters/{tar,database,store,lock,config_writer}`
 
 ### Story 2.1: Produce an archive of a site's files and database
 
@@ -642,7 +646,7 @@ So that I see it in the trace I already collect.
 
 The largest greenfield block, and the one capability that most distinguishes this from `mysqldump | tar`. Needs Epic 3's restore path.
 
-**Owns exclusively:** `adapters/{wpcli,config_writer}`
+**Owns exclusively:** `adapters/wpcli` and the relocation logic in `core/`; calls Epic 2's `adapters/config_writer`
 
 ### Story 7.1: Point a restored site at a new host and database
 

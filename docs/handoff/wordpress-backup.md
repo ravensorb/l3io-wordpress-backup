@@ -345,3 +345,30 @@ Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy
   this repo's, so it is reported to Shawn and not fixed here.
 - **`ruff format .` formats Python blocks inside Markdown**, so it rewrote the legacy
   README's example. That is why `README.md` is in the legacy exclude list.
+
+## Update — 2026-10-20 (later): route-1 elaboration, round 1
+
+- [done] E002 (8), E003 (5), E004 (3) stories elaborated: `3b30baf`, `b037d9f`, `e7d34ef`.
+  Brief: `_bmad-output/planning-artifacts/elaboration-brief.md`. E005–E007 paused until
+  Epic 2's gaps are filled (below).
+- [done] **Decisions, Shawn 2026-10-20** (all recorded in the spine or `epics.md`):
+  1. A gap pass adds to Epic 2's stories every contract E003/E004 found missing (restore
+     entry point and ports, `RestorePhase`, survey/ensure port, cipher port, per-member
+     encryption, Manifest fields for exclusions and restore mode, traversal hook, CLI flags,
+     the AD-26 chain).
+  2. AD-17 amended: the `DB_NAME` cutover is the last journaled step of `LOAD_DUMP`.
+  3. `adapters/config_writer` moves to Epic 2; Epic 7 keeps `adapters/wpcli`.
+  4. AD-23 amended: `wp-root/` alone is a files-only v0 Archive (0.2.21's `--mode files`).
+  5. AD-26: an unencrypted Safety Snapshot proceeds with a warning; an explicit flag opts out.
+  6. The database losing the cutover is dropped only in `*-clean` modes.
+  7. Exit codes 8 `VERIFICATION_FAILED` / 9 `LOCKED`; stories 2.5 and 2.6 move to sprint 1
+     (applied by `/l3io-plan reorg` after elaboration, because it re-keys them);
+     `python -m wpbackup2` stays `xfail(strict)` until AD-22 decides the legacy tree;
+     `platformdirs` becomes a runtime dependency.
+- [todo] **Config write defect** — `l3io-wordpress-config` v0.1.0's `WpConfigFile.set()`
+  turns a `0640` `wp-config.php` into `0644` (reproduced), does not fsync, and uses a
+  predictable temp name. Session `wordpress-config - wp-config write keeps mode`
+  (`cmvh5ers40uuftf01hxu2oa49`) was started 2026-10-20 at Shawn's request to fix it and
+  prepare 0.1.1; it replies here with the version to pin. AD-18 item 4 records it.
+- [todo] Next: the Epic 2 gap pass, then E005–E007, then `/l3io-plan reorg` (sprint
+  move), then steps 04–06, then the E002 gate re-run with both reviewers.
