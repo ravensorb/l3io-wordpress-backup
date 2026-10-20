@@ -1,0 +1,25 @@
+key: 'E002-S02-009'
+epic: 'E002'
+sprint: 'S02'
+title: Give restore the database, file and config operations it needs
+classification: complex
+status: backlog
+updated_at: '2026-10-20T21:32:01Z'
+estimate:
+  man_hours: 15.0
+  hitl_hours: 0.81
+  elapsed_hours: 5.0
+  tokens_k:
+    total: 350
+    input: 52
+    output: 18
+    cache_write: 105
+    cache_read: 175
+  cost: 1.45
+  model: claude-opus-5
+  fix_factor: 1.25
+  scope_ratios:
+    man_hours: 1.0
+    hitl_hours: 1.0
+    elapsed_hours: 1.0
+    tokens_k: 1.0
