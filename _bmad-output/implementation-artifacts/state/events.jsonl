@@ -44,3 +44,6 @@
 {"cause": "cli", "epic": "002", "event": "issue_opened", "key": "BL-E002-002", "session": null, "severity": "Low", "ts": "2026-09-27T17:25:20Z"}
 {"cause": "cli", "epic": "002", "event": "issue_opened", "key": "BL-E002-003", "session": null, "severity": "Low", "ts": "2026-09-27T17:25:21Z"}
 {"cause": "cli", "epic": "002", "event": "issue_opened", "key": "BL-E002-004", "session": null, "severity": "Low", "ts": "2026-09-27T17:25:21Z"}
+{"cause": "plan-intake", "epic": "002", "event": "issue_resolved", "key": "BL-E002-001", "ref": "f91261c", "resolution": "fixed", "session": "l3io-pm-cmvgs1vhh0gy7tf01cfd5vtqt", "ts": "2026-10-20T17:53:32Z"}
+{"cause": "plan-intake", "epic": "002", "event": "issue_resolved", "key": "BL-E002-002", "ref": "f91261c", "resolution": "fixed", "session": "l3io-pm-cmvgs1vhh0gy7tf01cfd5vtqt", "ts": "2026-10-20T17:53:33Z"}
+{"cause": "plan-intake", "epic": "002", "event": "issue_resolved", "key": "BL-E002-003", "ref": "f91261c", "resolution": "fixed", "session": "l3io-pm-cmvgs1vhh0gy7tf01cfd5vtqt", "ts": "2026-10-20T17:53:33Z"}

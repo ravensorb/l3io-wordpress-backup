@@ -1,0 +1,37 @@
+resolved:
+- key: BL-E002-001
+  epic: '002'
+  sprint: ''
+  title: "epics.md Epic List table row says 'back up and prove it'; the ## Epic 2 heading says 'take a backup and prove it'"
+  source: arch-gate AG-5 (l3io-arch-review)
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md (AG-5)
+  resolution: fixed
+  resolved_at: '2026-10-20T17:53:32Z'
+  ref: f91261c
+  note: epics.md Epic List row now reads 'take a backup and prove it', matching the heading (AG-5)
+- key: BL-E002-002
+  epic: '002'
+  sprint: ''
+  title: "Story 2.1 drops FR-1's consequence: credentials resolved from wp-config.php when no Credential Provider is given"
+  source: arch-gate AG-22 (l3io-arch-review)
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md (AG-22)
+  resolution: fixed
+  resolved_at: '2026-10-20T17:53:33Z'
+  ref: f91261c
+  note: "Story 2.1 gains FR-1's consequence: credentials resolved from wp-config.php when no Credential Provider is given"
+- key: BL-E002-003
+  epic: '002'
+  sprint: ''
+  title: Story 2.5 names the dependency wpconfigr; post-rename it is l3io-wp-config / import l3io.wp.config (ADR-0012, AD-27)
+  source: arch-gate AG-23 (l3io-arch-review)
+  severity: Low
+  status: resolved
+  description: See _bmad-output/implementation-artifacts/epic-002/arch/arch-gate-review.md (AG-23)
+  resolution: fixed
+  resolved_at: '2026-10-20T17:53:33Z'
+  ref: f91261c
+  note: Story 2.5 names l3io-wp-config (l3io.wp.config), not wpconfigr
