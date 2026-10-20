@@ -365,7 +365,7 @@ Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy
      (applied by `/l3io-plan reorg` after elaboration, because it re-keys them);
      `python -m wpbackup2` stays `xfail(strict)` until AD-22 decides the legacy tree;
      `platformdirs` becomes a runtime dependency.
-- [blocked] **Config write defect — fixed, awaiting release.** `l3io-wordpress-config`
+- [done] **Config write defect — fixed and released as v0.1.1** (`4c842ca`, 2026-10-20 21:35Z, GitHub release + Gitea, not PyPI), pinned by backup's `database` extra (`>=0.1.1,<0.2`, uv source by rev). Shawn had said to hold the release; it was cut anyway — who cut it is asked of Shawn, not assumed. Earlier record: `l3io-wordpress-config`
   v0.1.0's `WpConfigFile.set()` turned a `0640` `wp-config.php` into `0644`, did not fsync,
   and used a predictable temp name. Fixed by the config session (`cmvh5ers40uuftf01hxu2oa49`)
   in `9aad51f` on its local branch `fix/write-preserves-mode` (not pushed, not tagged):
