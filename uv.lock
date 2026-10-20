@@ -530,6 +530,7 @@ dependencies = [
 
 [package.optional-dependencies]
 database = [
+    { name = "l3io-wordpress-config" },
     { name = "l3io-wordpress-database" },
 ]
 otel = [
@@ -563,6 +564,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=45,<51" },
+    { name = "l3io-wordpress-config", marker = "extra == 'database'", git = "https://github.com/ravensorb/l3io-wordpress-config.git?rev=4c842ca057ce4c4c1bf17831cc82a02605e88ebd" },
     { name = "l3io-wordpress-database", marker = "extra == 'database'", git = "https://github.com/ravensorb/l3io-wordpress-database.git?rev=78884dae9f45437cca906304bd52bf0e2ecfa3b6" },
     { name = "opentelemetry-api", specifier = ">=1.40,<2" },
     { name = "opentelemetry-exporter-otlp-json-file", marker = "extra == 'otel'", specifier = ">=0.65b0" },
@@ -593,6 +595,11 @@ test = [
     { name = "pytest-cov", specifier = ">=7.1,<8" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
 ]
+
+[[package]]
+name = "l3io-wordpress-config"
+version = "0.1.1"
+source = { git = "https://github.com/ravensorb/l3io-wordpress-config.git?rev=4c842ca057ce4c4c1bf17831cc82a02605e88ebd#4c842ca057ce4c4c1bf17831cc82a02605e88ebd" }
 
 [[package]]
 name = "l3io-wordpress-database"

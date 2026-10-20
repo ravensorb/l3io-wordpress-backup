@@ -71,7 +71,15 @@ dependencies = [
 # published somewhere.
 #
 # The NAMESPACE is unaffected: it imports as l3io.wp.database (docs/adr/0012).
-database = ["l3io-wordpress-database>=0.1.0,<0.2"]
+# l3io-wordpress-config is named directly, not left to database's `wpconfig`
+# extra, because restore writes wp-config.php through it (adapters/config_writer,
+# AD-18) and v0.1.0's write widened the file's mode -- a 0640 file came back
+# 0644, exposing DB_PASSWORD. v0.1.1 keeps mode and owner and fsyncs; nothing
+# below it may be resolved.
+database = [
+  "l3io-wordpress-database>=0.1.0,<0.2",
+  "l3io-wordpress-config>=0.1.1,<0.2",
+]
 
 # AD-8 — an optional dependency is an optional import. Nothing here may be
 # imported at module scope; `verify-install` asserts a base install pulls none
@@ -99,6 +107,8 @@ wpbackup2 = "l3io.wp.backup.cli:run_from_cli"
 [tool.uv.sources]
 # v0.1.0 = 78884da.
 l3io-wordpress-database = { git = "https://github.com/ravensorb/l3io-wordpress-database.git", rev = "78884dae9f45437cca906304bd52bf0e2ecfa3b6" }
+# v0.1.1 = 4c842ca.
+l3io-wordpress-config = { git = "https://github.com/ravensorb/l3io-wordpress-config.git", rev = "4c842ca057ce4c4c1bf17831cc82a02605e88ebd" }
 
 [tool.uv]
 required-version = "==0.11.6"
