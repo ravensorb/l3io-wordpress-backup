@@ -79,3 +79,63 @@ def test_no_unguarded_wheel_glob(wf: pathlib.Path) -> None:
         f"{wf.name}: unguarded `ls dist/*.whl` -> resolve it once and assert the "
         f"set has exactly one member: {offenders}"
     )
+
+
+# release.yml moves floating `v<major>` / `v<major>.<minor>` tags onto every
+# release commit. A bare `v*` push filter starts a publish on each of them.
+FLOATING = ["v1", "v1.0", "v12", "v12.3"]
+RELEASES = ["v1.0.0", "v1.2.3", "v12.0.10", "v1.0.0rc1"]
+
+
+def _starts_a_run(tag: str, patterns: list[str]) -> bool:
+    """GitHub's tag filter: the last matching pattern wins, ``!`` negates."""
+    from fnmatch import fnmatchcase
+
+    hit = False
+    for pattern in patterns:
+        if fnmatchcase(tag, pattern.removeprefix("!")):
+            hit = not pattern.startswith("!")
+    return hit
+
+
+def _tag_patterns(wf: pathlib.Path) -> list[str]:
+    doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+    # PyYAML parses a bare `on:` key as boolean True.
+    on = doc.get(True, doc.get("on")) or {}
+    push = (on.get("push") or {}) if isinstance(on, dict) else {}
+    return list(push.get("tags") or [])
+
+
+@pytest.mark.parametrize("wf", WORKFLOWS, ids=lambda p: p.name)
+def test_no_floating_tag_starts_a_workflow(wf: pathlib.Path) -> None:
+    patterns = _tag_patterns(wf)
+    started = [t for t in FLOATING if _starts_a_run(t, patterns)]
+    assert not started, f"{wf.name} runs on floating tag(s) {started}: {patterns}"
+
+
+def test_a_release_tag_still_starts_publish() -> None:
+    patterns = _tag_patterns(WORKFLOWS[0].parent / "publish.yml")
+    assert patterns, "publish.yml has no tag trigger -- the check above is vacuous"
+    assert all(_starts_a_run(t, patterns) for t in RELEASES), patterns
+
+
+def test_release_notes_never_start_from_a_floating_tag() -> None:
+    """Config's v0.1.0 shipped "no changes": the builder took the floating v0.1.
+
+    The notes builder must be told its lower bound, and that bound must come from
+    a step that matches only three-component tags.
+    """
+    jobs = _jobs(WORKFLOWS[0].parent / "publish.yml")
+    steps = (jobs.get("release") or {}).get("steps") or []
+    assert steps, "publish.yml has no release job -- the check below is vacuous"
+    builder = next(
+        s
+        for s in steps
+        if "git-action-release-changelog-builder" in str(s.get("uses", ""))
+    )
+    from_tag = str((builder.get("with") or {}).get("from-tag", ""))
+    assert "steps.previous.outputs.tag" in from_tag, f"from-tag is {from_tag!r}"
+    previous = next((s for s in steps if s.get("id") == "previous"), None)
+    assert previous is not None, "no step with id 'previous' computes the lower bound"
+    assert "--match 'v[0-9]*.[0-9]*.[0-9]*'" in str(previous.get("run", ""))
+    assert steps.index(previous) < steps.index(builder)

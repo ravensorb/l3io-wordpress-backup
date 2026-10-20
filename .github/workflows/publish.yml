@@ -20,7 +20,9 @@ name: Publish
 
 on:
   push:
-    tags: ['v*']
+    # Three-component release tags only. release.yml also moves floating
+    # `v<major>` / `v<major>.<minor>` tags; those must never start a publish.
+    tags: ['v*.*.*']
   # Cutting a release is sufficient to mirror; it does not have to be a tag push.
   # The release job excludes this event explicitly — see its `if:` — because on a
   # `release: published` run the release already exists and creating it again fails.
@@ -545,29 +547,42 @@ jobs:
       # `git-action-changelog-parser`, stops at v2 -- and a @v3.0.14 pin copied
       # between the two is why every repo in this family had a release step that
       # could not resolve its action.
+      # The previous RELEASE tag: three components only, so a floating tag on
+      # the same commit can never be taken for it. On the first release there is
+      # none, and the range is bounded by `baseline-pre-rewrite` instead (below).
+      - name: the previous release tag
+        id: previous
+        run: |
+          set -euo pipefail
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          echo "tag=${prev:-baseline-pre-rewrite}" >> "$GITHUB_OUTPUT"
+          echo "previous release tag: ${prev:-none, using baseline-pre-rewrite}"
+
       - name: build the release notes from the commit log
         id: notes
         uses: LiquidLogicLabs/git-action-release-changelog-builder@v3
         with:
           mode: COMMIT
           to-tag: ${{ github.ref_name }}
-          # BOUND THE RANGE. With no prior release the builder walks back to the
-          # first commit, and this repo's history starts 2018-12-02: of 105
-          # commits, 84 predate Conventional Commits and read "Bug fixes" or
-          # "Bump version: 0.2.20 -> 0.2.21". @latest-release resolves to the
-          # most recent published release and falls back to the previous TAG,
-          # which is `baseline-pre-rewrite` at 01ee58c -- the last commit before
-          # the rewrite. So v1.0.0's notes cover the 21 rewrite commits, all of
-          # which conform, and every later release compares against its
-          # predecessor with no further intervention.
+          # BOUND THE RANGE, explicitly -- never auto-detected. With no prior
+          # release the builder walks back to the first commit, and this repo's
+          # history starts 2018-12-02: of 105 commits, 84 predate Conventional
+          # Commits and read "Bug fixes" or "Bump version: 0.2.20 -> 0.2.21". So
+          # the first release starts at `baseline-pre-rewrite` (01ee58c, the last
+          # commit before the rewrite) and every later one at its predecessor.
           #
-          # That tag has no `v` prefix deliberately: it is invisible to
-          # git_describe_command's --match and to release.yml's tag-format, so it
-          # cannot become a version basis. Rewriting the 84 old subjects was the
+          # This was '@latest-release', which falls back to the nearest TAG while
+          # no release exists -- and release.yml moves the floating
+          # v<major>.<minor> onto this very commit first. Config's v0.1.0 shipped
+          # "no changes" exactly that way (its 14512f0).
+          #
+          # `baseline-pre-rewrite` has no `v` prefix deliberately: it is invisible
+          # to git_describe_command's --match and to release.yml's tag-format, so
+          # it cannot become a version basis. Rewriting the 84 old subjects was the
           # alternative and was rejected -- 43 of them are the upstream author's
           # commits, and every SHA would change, including three already cited as
           # recovery records in committed documents.
-          from-tag: '@latest-release'
+          from-tag: ${{ steps.previous.outputs.tag }}
           configuration: .github/changelog-config.json
           token: ${{ secrets.GITHUB_TOKEN }}
           fail-on-error: 'false'
