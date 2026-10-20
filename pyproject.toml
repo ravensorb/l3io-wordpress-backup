@@ -186,8 +186,15 @@ include = ["/src", "/tests", "/tools", "/docs", "/README.md", "/LICENSE"]
 # ruff
 # --------------------------------------------------------------------------
 [tool.ruff]
-# The agent tooling directories are vendored, not ours.
-extend-exclude = ["_bmad", "_bmad-output", ".claude", ".agents", ".bmad"]
+# The agent tooling directories are vendored, not ours. The rest is the legacy
+# 0.2.21 tree (the `wpbackup2/` package, its setuptools build, its tests and
+# the README that documents it), kept on disk until AD-22's frozen surface
+# decides what it becomes; it was never linted and is not the rewrite. test_legacy_test_exclusion guards that
+# this list names nothing else.
+extend-exclude = [
+  "_bmad", "_bmad-output", ".claude", ".agents", ".bmad",
+  "wpbackup2", "tests/classes", "setup.py", "test.py", "README.md",
+]
 line-length = 88
 target-version = "py311"
 
@@ -216,6 +223,8 @@ select = [
 "tests/**" = ["S101"]
 # The gates are scripts: they print their findings and read files by path.
 "tools/**" = ["S101"]
+# Developer scripts run `git` and `gh` from PATH with fixed argument vectors.
+"scripts/**" = ["S603", "S607"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -242,7 +251,13 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 [tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers --strict-config"
+# tests/classes/ tests the legacy `wpbackup2` package, which imports `wpconfigr`
+# and `wpdatabase2`; neither is in the lock, so collecting it fails the whole
+# run. It also needs a live site and a tests/test_settings.json that is not in
+# the repository. Kept on disk until AD-22's frozen surface decides what the
+# legacy tree becomes. test_legacy_test_exclusion guards that nothing else is
+# hidden by this.
+addopts = "-ra --strict-markers --strict-config --ignore=tests/classes"
 markers = [
   "integration: needs a live database, WordPress or WP-CLI (spine: a small integration tier, marked and separable)",
 ]

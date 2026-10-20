@@ -13,22 +13,37 @@ set that no longer contains what matters.
 
 Exit 0 = all repos conform. Exit 1 = at least one finding.
 """
+
 from __future__ import annotations
-import sys, pathlib, argparse, re
+
+import argparse
+import pathlib
+import re
+import sys
+from collections.abc import Callable
+from typing import Any
+
 import yaml
 
-def load(p: pathlib.Path):
+# Records one finding: (area, message).
+Reporter = Callable[[str, str], None]
+
+
+def load(p: pathlib.Path) -> Any:  # noqa: ANN401 - whatever the YAML holds
     with p.open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
-def triggers(doc) -> dict:
+
+def triggers(doc: dict) -> dict:
     # PyYAML parses a bare `on:` key as boolean True
     return doc.get(True, doc.get("on")) or {}
 
-def jobtext(job) -> str:
+
+def jobtext(job: dict) -> str:
     return yaml.safe_dump(job, default_flow_style=False)
 
-def code_only(job) -> str:
+
+def code_only(job: dict) -> str:
     """Job text with shell comments stripped.
 
     A `run:` block's comments are part of the serialized job, so a naive grep
@@ -44,6 +59,7 @@ def code_only(job) -> str:
             continue
         out.append(re.sub(r"\\n\s*#[^\\]*", " ", line))
     return "\n".join(out)
+
 
 def strip_comments(blob: str) -> str:
     """Remove YAML/shell comments from a serialized workflow.
@@ -75,7 +91,8 @@ def needs_closure(jobs: dict, start: str) -> set[str]:
 
 # ---------------------------------------------------------------- rules
 
-def check_ci(doc, R):
+
+def check_ci(doc: dict, R: Reporter) -> str:
     on, jobs = triggers(doc), doc.get("jobs", {})
     if "pull_request" not in on:
         R("ci", "no pull_request trigger -- CI never gates a PR")
@@ -88,28 +105,40 @@ def check_ci(doc, R):
         if j not in jobs:
             R("ci", f"missing required job `{j}`")
     blob = yaml.safe_dump(doc)
-    if "verify-install" in jobs and "--no-project" not in blob and "clean" not in blob.lower():
+    if (
+        "verify-install" in jobs
+        and "--no-project" not in blob
+        and "clean" not in blob.lower()
+    ):
         R("ci", "verify-install present but does not look like a clean-install check")
     return blob
 
-def check_namespace(ci_blob, pub_blob, is_ns, R):
+
+def check_namespace(ci_blob: str, pub_blob: str, is_ns: bool, R: Reporter) -> None:
     """AD-27: a namespace package must be guarded at BOTH ends."""
     if not is_ns:
         return
     shadow = r"__init__\.py"
     if not re.search(shadow, ci_blob):
-        R("ns", "ci.yml has no AD-27 __init__.py shadow guard -- a namespace break "
-                "reaches publish instead of the PR")
+        R(
+            "ns",
+            "ci.yml has no AD-27 __init__.py shadow guard -- a namespace break "
+            "reaches publish instead of the PR",
+        )
     # Do NOT match the word "namespace": it appears in comments, so a file saying
     # "we should check the namespace" and nothing else would pass. That is the
     # comment-stripping hazard this checker warned another repo about, in this
     # checker's own rule -- found by that repo reading it. Require the structural
     # thing a real check must mention outside a comment.
     if "__init__.py" not in strip_comments(pub_blob):
-        R("ns", "publish.yml has no structural namespace assertion (no __init__.py "
-                "check outside a comment) -- the word alone is not a check")
+        R(
+            "ns",
+            "publish.yml has no structural namespace assertion (no __init__.py "
+            "check outside a comment) -- the word alone is not a check",
+        )
 
-def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
+
+def check_version_single_source(repo: pathlib.Path, pub_blob: str, R: Reporter) -> None:
     """The git TAG is the version: no literal anywhere, and the vcs wiring intact.
 
     Shawn's ruling, after both the two-literal shape and the literal+dynamic shape
@@ -127,6 +156,7 @@ def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
         return
     try:
         import tomllib
+
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except Exception as e:
         R("ver", f"pyproject.toml unreadable, so version rules were not checked: {e}")
@@ -137,23 +167,35 @@ def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
     raw = hatch.get("raw-options", {}) or {}
 
     if "version" in project:
-        R("ver", f'pyproject.toml carries a static version literal ({project["version"]}); '
-                 "the tag is the source")
+        R(
+            "ver",
+            f"pyproject.toml carries a static version literal ({project['version']}); "
+            "the tag is the source",
+        )
     if "version" not in (project.get("dynamic") or []):
         R("ver", 'pyproject.toml does not declare dynamic = ["version"]')
     if hatch.get("source") != "vcs":
-        R("ver", f'[tool.hatch.version] source is {hatch.get("source")!r}, expected "vcs" '
-                 "(a `path` source reads a literal again)")
+        R(
+            "ver",
+            f'[tool.hatch.version] source is {hatch.get("source")!r}, expected "vcs" '
+            "(a `path` source reads a literal again)",
+        )
     if "hatch-vcs" not in str(data.get("build-system", {}).get("requires", [])):
         R("ver", "build-system.requires does not include hatch-vcs")
     if raw.get("local_scheme") != "no-local-version":
-        R("ver", "raw-options.local_scheme is not no-local-version -- a +g<sha> local "
-                 "segment is rejected by PyPI and most indexes")
+        R(
+            "ver",
+            "raw-options.local_scheme is not no-local-version -- a +g<sha> local "
+            "segment is rejected by PyPI and most indexes",
+        )
     cmd = str(raw.get("git_describe_command", ""))
     if not re.search(r"--match\s+v\[0-9\]\*\.\[0-9\]\*\.\[0-9\]\*", cmd):
-        R("ver", "git_describe_command does not --match three-component v tags -- a "
-                 "two-component tag like v1.0 is read as the basis and guessed to "
-                 "1.1.devN, which sorts ABOVE 1.0.0")
+        R(
+            "ver",
+            "git_describe_command does not --match three-component v tags -- a "
+            "two-component tag like v1.0 is read as the basis and guessed to "
+            "1.1.devN, which sorts ABOVE 1.0.0",
+        )
 
     # A literal is allowed only where metadata is also read.
     offenders = []
@@ -171,7 +213,7 @@ def check_version_single_source(repo: pathlib.Path, pub_blob: str, R):
 _REF_CACHE: dict[str, bool] = {}
 
 
-def check_release_dispatch(repo: pathlib.Path, R):
+def check_release_dispatch(repo: pathlib.Path, R: Reporter) -> None:
     """release.yml must hand the new tag to publish.yml on the REAL-release path.
 
     Reported by py-wpconfigr. This repo's release.yml had its only dispatch step
@@ -189,8 +231,12 @@ def check_release_dispatch(repo: pathlib.Path, R):
     Reads the COMMITTED file: a sibling mid-edit is not a specification.
     """
     import subprocess as _s
-    r = _s.run(["git", "-C", str(repo), "show", "HEAD:.github/workflows/release.yml"],
-               capture_output=True, text=True)
+
+    r = _s.run(
+        ["git", "-C", str(repo), "show", "HEAD:.github/workflows/release.yml"],
+        capture_output=True,
+        text=True,
+    )
     if r.returncode != 0:
         return  # absence is reported by check_release_process
     try:
@@ -198,28 +244,39 @@ def check_release_dispatch(repo: pathlib.Path, R):
     except yaml.YAMLError as e:
         R("disp", f"release.yml is not valid YAML at HEAD: {str(e).splitlines()[0]}")
         return
-    steps = [s for j in (doc.get("jobs") or {}).values() for s in (j.get("steps") or [])]
+    steps = [
+        s for j in (doc.get("jobs") or {}).values() for s in (j.get("steps") or [])
+    ]
     dispatches = [
-        s for s in steps
+        s
+        for s in steps
         if "trigger-workflow" in str(s.get("uses", ""))
         or "workflow run" in str(s.get("run", ""))
     ]
     if not dispatches:
-        R("disp", "release.yml never dispatches publish.yml -- it creates a tag and "
-                  "nothing builds it (a tag created with GITHUB_TOKEN fires no push event)")
+        R(
+            "disp",
+            "release.yml never dispatches publish.yml -- it creates a tag and "
+            "nothing builds it (a tag created with GITHUB_TOKEN fires no push event)",
+        )
         return
     # At least one must be reachable when bump is NOT dev.
-    real = [s for s in dispatches
-            if "!= 'dev'" in str(s.get("if", "")).replace('"', "'")
-            or not s.get("if")]
+    real = [
+        s
+        for s in dispatches
+        if "!= 'dev'" in str(s.get("if", "")).replace('"', "'") or not s.get("if")
+    ]
     if not real:
         guards = [str(s.get("if")) for s in dispatches]
-        R("disp", "release.yml dispatches publish.yml ONLY on the dev path "
-                  f"({guards}) -- bump=patch|minor|major tags a release and publishes "
-                  "nothing, while the summary claims otherwise")
+        R(
+            "disp",
+            "release.yml dispatches publish.yml ONLY on the dev path "
+            f"({guards}) -- bump=patch|minor|major tags a release and publishes "
+            "nothing, while the summary claims otherwise",
+        )
 
 
-def check_action_refs(repo: pathlib.Path, R, *, online: bool):
+def check_action_refs(repo: pathlib.Path, R: Reporter, *, online: bool) -> None:
     """Every `uses:` ref must EXIST, and org actions must be pinned to a major.
 
     This rule exists because all three repos referenced
@@ -234,16 +291,23 @@ def check_action_refs(repo: pathlib.Path, R, *, online: bool):
     lookup cannot run, it says so instead of reporting the refs as fine.
     """
     import subprocess
+
     refs: dict[str, set[str]] = {}
     for f in sorted((repo / ".github" / "workflows").glob("*.yml")):
-        for m in re.finditer(r"uses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^\s\"']+)",
-                             f.read_text(encoding="utf-8")):
+        for m in re.finditer(
+            r"uses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^\s\"']+)",
+            f.read_text(encoding="utf-8"),
+        ):
             refs.setdefault(m.group(1), set()).add(m.group(2))
 
     for action, tags in sorted(refs.items()):
         is_org = action.startswith("LiquidLogicLabs/")
         if is_org and len(tags) > 1:
-            R("act", f"{action} is pinned at {sorted(tags)} in the same repo -- one major per action")
+            R(
+                "act",
+                f"{action} is pinned at {sorted(tags)} in the same repo -- "
+                "one major per action",
+            )
         for tag in sorted(tags):
             if is_org and not re.fullmatch(r"v[0-9]+", tag):
                 R("act", f"{action}@{tag} is not a floating major; pin to vN")
@@ -254,8 +318,10 @@ def check_action_refs(repo: pathlib.Path, R, *, online: bool):
                 # A branch-style ref (pypa's release/v1) is not a tag; try both.
                 ok = False
                 for kind in ("tags", "heads"):
-                    r = subprocess.run(["gh", "api", f"repos/{action}/git/ref/{kind}/{tag}"],
-                                       capture_output=True)
+                    r = subprocess.run(
+                        ["gh", "api", f"repos/{action}/git/ref/{kind}/{tag}"],
+                        capture_output=True,
+                    )
                     if r.returncode == 0:
                         ok = True
                         break
@@ -264,7 +330,7 @@ def check_action_refs(repo: pathlib.Path, R, *, online: bool):
                 R("act", f"{key} DOES NOT EXIST -- the workflow cannot resolve it")
 
 
-def check_release_process(repo: pathlib.Path, R):
+def check_release_process(repo: pathlib.Path, R: Reporter) -> None:
     """release.yml, `make release`, and a changelog gate that runs BEFORE the tag.
 
     Shawn's call is three hand-maintained copies of the workflow for now rather than
@@ -275,9 +341,6 @@ def check_release_process(repo: pathlib.Path, R):
     rel = repo / ".github" / "workflows" / "release.yml"
     if not rel.is_file():
         R("rel", "no .github/workflows/release.yml -- no single release path")
-        rel_blob = ""
-    else:
-        rel_blob = rel.read_text(encoding="utf-8")
 
     mk = repo / "Makefile"
     if not mk.is_file():
@@ -292,14 +355,23 @@ def check_release_process(repo: pathlib.Path, R):
         # --dryrun` that segfaulted. The check asserted a target NAME, not the
         # implementation behind it, and would have reported three greens over one
         # working target.
-        if re.search(r"^ci-dryrun\s*:", mk_text, re.M) and "act-dryrun-legs" not in mk_text:
-            R("rel", "`ci-dryrun` exists but does not read .github/act-dryrun-legs.json -- "
-                     "a one-event dry run skips the jobs the event does not reach, so the "
-                     "action refs in those jobs are never resolved")
+        if (
+            re.search(r"^ci-dryrun\s*:", mk_text, re.M)
+            and "act-dryrun-legs" not in mk_text
+        ):
+            R(
+                "rel",
+                "`ci-dryrun` exists but does not read .github/act-dryrun-legs.json -- "
+                "a one-event dry run skips the jobs the event does not reach, so the "
+                "action refs in those jobs are never resolved",
+            )
         if "release" in mk_text and "--untracked-files=no" not in mk_text:
-            R("rel", "the release guard does not pass --untracked-files=no; these repos "
-                     "permanently carry untracked BMad directories, so a bare "
-                     "`git status --porcelain` is never empty and would block every release")
+            R(
+                "rel",
+                "the release guard does not pass --untracked-files=no; these repos "
+                "permanently carry untracked BMad directories, so a bare "
+                "`git status --porcelain` is never empty and would block every release",
+            )
 
     # RELEASE NOTES COME FROM COMMIT MESSAGES, not a CHANGELOG.md.
     #
@@ -316,33 +388,55 @@ def check_release_process(repo: pathlib.Path, R):
     wf = "\n".join(blobs)
 
     if "git-action-release-changelog-builder" not in wf:
-        R("rel", "nothing builds release notes from the commit log "
-                 "(git-action-release-changelog-builder)")
+        R(
+            "rel",
+            "nothing builds release notes from the commit log "
+            "(git-action-release-changelog-builder)",
+        )
     if "git-action-changelog-parser" in strip_comments(wf):
-        R("rel", "still uses git-action-changelog-parser, which READS a CHANGELOG.md -- "
-                 "the notes now come from commit messages")
+        R(
+            "rel",
+            "still uses git-action-changelog-parser, which READS a CHANGELOG.md -- "
+            "the notes now come from commit messages",
+        )
     if (repo / "CHANGELOG.md").is_file():
-        R("rel", "CHANGELOG.md still exists; release notes are built from commits, so a "
-                 "second hand-maintained source will drift from them")
+        R(
+            "rel",
+            "CHANGELOG.md still exists; release notes are built from commits, so a "
+            "second hand-maintained source will drift from them",
+        )
     if "git-action-release@" in wf and "outputs.changelog" not in wf:
         R("rel", "the release step does not use the built notes as its body")
 
 
-
-def check_publish(doc, R):
+def check_publish(doc: dict, R: Reporter) -> str:
     on, jobs = triggers(doc), doc.get("jobs", {})
     push = on.get("push") or {}
-    if not (isinstance(push, dict) and any(t.startswith("v") for t in (push.get("tags") or []))):
+    if not (
+        isinstance(push, dict)
+        and any(t.startswith("v") for t in (push.get("tags") or []))
+    ):
         R("pub", "no `push: tags: [v*]` trigger")
     if "release" not in on:
-        R("pub", "no `release: types: [published]` trigger -- cutting a release does not publish")
+        R(
+            "pub",
+            "no `release: types: [published]` trigger -- "
+            "cutting a release does not publish",
+        )
     wd = on.get("workflow_dispatch") or {}
     opts = (((wd.get("inputs") or {}).get("target") or {}).get("options")) or []
     for want in ("testpypi", "pypi", "mirror"):
         if want not in opts:
             R("pub", f"workflow_dispatch target option `{want}` missing (has {opts})")
 
-    for j in ("version-gate", "build", "smoke", "publish-pypi", "publish-mirror", "release"):
+    for j in (
+        "version-gate",
+        "build",
+        "smoke",
+        "publish-pypi",
+        "publish-mirror",
+        "release",
+    ):
         if j not in jobs:
             R("pub", f"missing required job `{j}`")
 
@@ -350,23 +444,40 @@ def check_publish(doc, R):
     for name, job in jobs.items():
         cond = str(job.get("if", ""))
         if "secrets." in cond:
-            R("pub", f"job `{name}` references `secrets` in its `if:` -- not an available "
-                     "context there; it evaluates empty and SILENTLY SKIPS the job")
+            R(
+                "pub",
+                f"job `{name}` references `secrets` in its `if:` -- not an available "
+                "context there; it evaluates empty and SILENTLY SKIPS the job",
+            )
 
     # --- mirror must be gated on a preflight boolean, not on vars alone
     pre = next((n for n in jobs if n.endswith("preflight")), None)
     if pre is None:
-        R("pub", "no preflight job -- mirror cannot be gated on secret presence, because "
-                 "`secrets` is unavailable in a job-level `if:`")
+        R(
+            "pub",
+            "no preflight job -- mirror cannot be gated on secret presence, because "
+            "`secrets` is unavailable in a job-level `if:`",
+        )
     else:
         if pre != "preflight":
-            R("pub", f"preflight job is named `{pre}`; the standard name is `preflight`")
+            R(
+                "pub",
+                f"preflight job is named `{pre}`; the standard name is `preflight`",
+            )
         outs = jobs[pre].get("outputs") or {}
         if not outs:
-            R("pub", f"`{pre}` declares no outputs -- nothing for the mirror to gate on")
-        if "${VAR:+set}" not in jobtext(jobs[pre]) and ":+set}" not in jobtext(jobs[pre]):
-            R("pub", f"`{pre}` does not use ${{VAR:+set}} -- a skip is not diagnosable "
-                     "from the log without leaking a value")
+            R(
+                "pub",
+                f"`{pre}` declares no outputs -- nothing for the mirror to gate on",
+            )
+        if "${VAR:+set}" not in jobtext(jobs[pre]) and ":+set}" not in jobtext(
+            jobs[pre]
+        ):
+            R(
+                "pub",
+                f"`{pre}` does not use ${{VAR:+set}} -- a skip is not diagnosable "
+                "from the log without leaking a value",
+            )
 
     mir = jobs.get("publish-mirror")
     if mir:
@@ -374,22 +485,36 @@ def check_publish(doc, R):
         if pre and f"needs.{pre}.outputs" not in cond:
             R("pub", "publish-mirror is not gated on the preflight output")
         if "inputs.target" not in cond and "event_name" not in cond:
-            R("pub", "publish-mirror has no event/target gate -- a testpypi dry run also "
-                     "publishes to the mirror")
+            R(
+                "pub",
+                "publish-mirror has no event/target gate -- a testpypi dry run also "
+                "publishes to the mirror",
+            )
         body = jobtext(mir)
         if "check-url" in body and "curl" not in body:
-            R("pub", "mirror relies on `uv publish --check-url` for idempotence; it does not "
-                     "provide it (the check gets no credentials and falls through to a 409)")
+            R(
+                "pub",
+                "mirror relies on `uv publish --check-url` for idempotence; "
+                "it does not provide it (the check gets no credentials "
+                "and falls through to a 409)",
+            )
         if "curl" not in body:
             R("pub", "publish-mirror has no idempotence pre-check")
         if "pyproject" in code_only(mir):
-            R("pub", "mirror derives identity from pyproject.toml; this job has no checkout")
+            R(
+                "pub",
+                "mirror derives identity from pyproject.toml; this job has no checkout",
+            )
 
     rel = jobs.get("release")
     if rel:
         needs = rel.get("needs") or []
         if any("mirror" in n for n in needs):
-            R("pub", "release depends on a mirror job -- a red mirror then blocks the release")
+            R(
+                "pub",
+                "release depends on a mirror job -- "
+                "a red mirror then blocks the release",
+            )
         cond = str(rel.get("if", ""))
         c = cond.replace('"', "'")
         # Either form correctly excludes a `release` event: an explicit exclusion,
@@ -397,66 +522,99 @@ def check_publish(doc, R):
         # spelling of one of them was a false positive on the first run.
         excluded = ("event_name != 'release'" in c) or ("event_name == 'push'" in c)
         if "release" in str(on) and not excluded:
-            R("pub", "release job does not exclude `release` events, but `release:` is a "
-                     "trigger -- it will try to create a release that already exists")
+            R(
+                "pub",
+                "release job does not exclude `release` events, but `release:` is a "
+                "trigger -- it will try to create a release that already exists",
+            )
         c2 = cond.replace('"', "'")
         # `if: !cancelled()` unquoted is invalid YAML (`!` starts a tag), so the real
         # spellings are ${{ !cancelled() }} or a quoted scalar. Match on the function
         # name with optional whitespace rather than one literal form.
-        forced = bool(re.search(r"always\s*\(\s*\)", c2) or
-                      re.search(r"!\s*cancelled\s*\(\s*\)", c2))
+        forced = bool(
+            re.search(r"always\s*\(\s*\)", c2)
+            or re.search(r"!\s*cancelled\s*\(\s*\)", c2)
+        )
         guards = re.findall(r"needs\.[A-Za-z0-9_-]+\.result", c2)
         # Fire only when a job that CAN be skipped is actually in the release job's
         # needs closure. The previous spelling fired on every release job, which
         # encoded this repo's dependency graph as universal and was a false positive
         # against a release job that needs only unconditional jobs -- reported by
         # py-wordpress-database, verified by walking the closure.
-        conditional = sorted(n for n in needs_closure(jobs, "release") if jobs[n].get("if"))
+        conditional = sorted(
+            n for n in needs_closure(jobs, "release") if jobs[n].get("if")
+        )
         if conditional and not forced:
-            R("pub", f"release can be skipped: {conditional} in its needs closure carry an "
-                     "`if:`, and a skipped dependency skips release. Needs always() or "
-                     "!cancelled() to stay evaluated")
+            R(
+                "pub",
+                f"release can be skipped: {conditional} in its needs closure carry an "
+                "`if:`, and a skipped dependency skips release. Needs always() or "
+                "!cancelled() to stay evaluated",
+            )
         # Independent of topology: a force function WITHOUT per-need result guards is
         # actively harmful. Neither always() NOR !cancelled() filters a FAILED
         # dependency -- any truthy `if:` overrides failure propagation -- so the force
         # function alone cuts a release for a wheel that just failed its checks. Only
         # explicit needs.<job>.result assertions distinguish skipped from failed.
         if forced and not guards:
-            R("pub", "release `if:` forces evaluation (always()/!cancelled()) but asserts no "
-                     "needs.<job>.result -- a FAILED dependency would still cut a release. "
-                     "Neither function filters failure; only result checks do")
+            R(
+                "pub",
+                "release `if:` forces evaluation (always()/!cancelled()) "
+                "but asserts no "
+                "needs.<job>.result -- a FAILED dependency would still cut a release. "
+                "Neither function filters failure; only result checks do",
+            )
     return yaml.safe_dump(doc)
+
 
 # ---------------------------------------------------------------- driver
 
-def main():
+
+def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--offline", action="store_true",
-                    help="skip the action-ref existence lookups (they need gh + network)")
-    ap.add_argument("--root", default=str(pathlib.Path(__file__).resolve().parents[2]),
-                    help="directory holding the package repos (default: this repo's parent)")
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="skip the action-ref existence lookups (they need gh + network)",
+    )
+    ap.add_argument(
+        "--root",
+        default=str(pathlib.Path(__file__).resolve().parents[2]),
+        help="directory holding the package repos (default: this repo's parent)",
+    )
     a = ap.parse_args()
     root = pathlib.Path(a.root)
 
-    repos = sorted(p.parent for p in root.glob("*/pyproject.toml")
-                   if (p.parent/".github"/"workflows").is_dir())
+    repos = sorted(
+        p.parent
+        for p in root.glob("*/pyproject.toml")
+        if (p.parent / ".github" / "workflows").is_dir()
+    )
     if not repos:
         print(f"no package repos found under {root}", file=sys.stderr)
         return 2
 
     import subprocess as _sp
-    online = not a.offline and _sp.run(["gh", "auth", "status"], capture_output=True).returncode == 0
+
+    online = (
+        not a.offline
+        and _sp.run(["gh", "auth", "status"], capture_output=True).returncode == 0
+    )
     if not online:
-        print("NOTE action-ref existence is NOT being checked "
-              f"({'--offline' if a.offline else 'gh unavailable or unauthenticated'}). "
-              "A ref that does not resolve will not be reported.")
+        print(
+            "NOTE action-ref existence is NOT being checked "
+            f"({'--offline' if a.offline else 'gh unavailable or unauthenticated'}). "
+            "A ref that does not resolve will not be reported."
+        )
 
     total = 0
     for repo in repos:
         findings: list[tuple[str, str]] = []
-        R = lambda area, msg: findings.append((area, msg))
-        wf = repo/".github"/"workflows"
-        ci_p, pub_p = wf/"ci.yml", wf/"publish.yml"
+        R: Reporter = lambda area, msg, findings=findings: findings.append(  # noqa: E731
+            (area, msg)
+        )
+        wf = repo / ".github" / "workflows"
+        ci_p, pub_p = wf / "ci.yml", wf / "publish.yml"
         ci_blob = pub_blob = ""
         # A parse failure is a finding, not an exception. Letting it raise ended the
         # whole sweep at the first bad file, so repos after it were never examined --
@@ -468,18 +626,24 @@ def main():
             try:
                 ci_blob = check_ci(load(ci_p), R)
             except yaml.YAMLError as e:
-                R("ci", f"ci.yml is not valid YAML, so nothing in it was checked: "
-                        f"{str(e).splitlines()[0]}")
+                R(
+                    "ci",
+                    f"ci.yml is not valid YAML, so nothing in it was checked: "
+                    f"{str(e).splitlines()[0]}",
+                )
         if not pub_p.exists():
             R("pub", "no publish.yml")
         else:
             try:
                 pub_blob = check_publish(load(pub_p), R)
             except yaml.YAMLError as e:
-                R("pub", f"publish.yml is not valid YAML, so nothing in it was checked: "
-                         f"{str(e).splitlines()[0]}")
+                R(
+                    "pub",
+                    f"publish.yml is not valid YAML, so nothing in it was checked: "
+                    f"{str(e).splitlines()[0]}",
+                )
 
-        is_ns = (repo/"src"/"l3io").is_dir()
+        is_ns = (repo / "src" / "l3io").is_dir()
         check_namespace(ci_blob, pub_blob, is_ns, R)
         check_version_single_source(repo, pub_blob, R)
         check_release_process(repo, R)
@@ -488,12 +652,24 @@ def main():
 
         # tracked-in-git check: a workflow that is not committed never runs
         import subprocess
+
         for f in sorted(wf.glob("*.yml")):
-            r = subprocess.run(["git", "-C", str(repo), "ls-files", "--error-unmatch",
-                                str(f.relative_to(repo))],
-                               capture_output=True)
+            r = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "ls-files",
+                    "--error-unmatch",
+                    str(f.relative_to(repo)),
+                ],
+                capture_output=True,
+            )
             if r.returncode != 0:
-                R("git", f"{f.name} is NOT tracked in git -- it can never run on a push")
+                R(
+                    "git",
+                    f"{f.name} is NOT tracked in git -- it can never run on a push",
+                )
 
         mark = "OK" if not findings else f"{len(findings)} finding(s)"
         ns = " [namespace pkg]" if is_ns else ""
@@ -527,15 +703,26 @@ def main():
         # same error in one session: a sibling's working tree is not a
         # specification.
         import subprocess as _s
-        r = _s.run(["git", "-C", str(repo), "show", "HEAD:pyproject.toml"],
-                   capture_output=True, text=True)
+
+        r = _s.run(
+            ["git", "-C", str(repo), "show", "HEAD:pyproject.toml"],
+            capture_output=True,
+            text=True,
+        )
         content = r.stdout if r.returncode == 0 else ""
         if content:
             m = re.search(r'^name = "([^"]+)"', content, re.M)
             if m:
                 names[repo.name] = m.group(1)
-        areas = [d.name for d in (repo / "src" / "l3io").iterdir()
-                 if d.is_dir() and not d.name.startswith("__")] if (repo / "src" / "l3io").is_dir() else []
+        areas = (
+            [
+                d.name
+                for d in (repo / "src" / "l3io").iterdir()
+                if d.is_dir() and not d.name.startswith("__")
+            ]
+            if (repo / "src" / "l3io").is_dir()
+            else []
+        )
         if areas:
             namespaces[repo.name] = f"l3io/{areas[0]}"
     fam = []
@@ -544,8 +731,10 @@ def main():
             fam.append(f"{r}: distribution is {n!r}, expected l3io-wordpress-<area>")
     for r, ns in sorted(namespaces.items()):
         if ns != "l3io/wp":
-            fam.append(f"{r}: namespace root is {ns!r}, expected l3io/wp "
-                       f"(it is SHARED -- one repo cannot move it alone)")
+            fam.append(
+                f"{r}: namespace root is {ns!r}, expected l3io/wp "
+                f"(it is SHARED -- one repo cannot move it alone)"
+            )
     if fam:
         print(f"\n=== family (cross-repo) -- {len(fam)} finding(s)")
         for f in fam:
@@ -561,19 +750,24 @@ def main():
         rel = repo / ".github" / "workflows" / "release.yml"
         if not rel.is_file():
             continue
-        m = re.search(r"the first release is (v[0-9]+\.[0-9]+\.[0-9]+)",
-                      rel.read_text(encoding="utf-8"))
+        m = re.search(
+            r"the first release is (v[0-9]+\.[0-9]+\.[0-9]+)",
+            rel.read_text(encoding="utf-8"),
+        )
         if m:
             firsts[repo.name] = m.group(1)
     if len(set(firsts.values())) > 1:
         print("\n=== family (cross-repo) -- 1 finding(s)")
-        print(f"  [fam] the first-release version disagrees across the family: {firsts}. "
-              "These packages release together; a divergent starting version is a gap "
-              "no per-repo rule can see.")
+        print(
+            f"  [fam] the first-release version disagrees across the family: {firsts}. "
+            "These packages release together; a divergent starting version is a gap "
+            "no per-repo rule can see."
+        )
         total += 1
 
-    print(f"\n{'-'*60}\n{len(repos)} repo(s) checked, {total} finding(s)")
+    print(f"\n{'-' * 60}\n{len(repos)} repo(s) checked, {total} finding(s)")
     return 1 if total else 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

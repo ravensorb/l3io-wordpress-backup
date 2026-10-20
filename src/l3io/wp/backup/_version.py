@@ -14,7 +14,8 @@ contributor hits first.
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version as _dist_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _dist_version
 
 __all__ = ["__version__"]
 

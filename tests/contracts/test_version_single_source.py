@@ -82,11 +82,14 @@ def test_no_version_literal_anywhere_in_src() -> None:
         if "importlib.metadata" in text:
             continue  # reads metadata; the literal is a fallback sentinel
         offenders.append(f.relative_to(ROOT).as_posix())
-    assert not offenders, f"version literal outside a metadata-reading module: {offenders}"
+    assert not offenders, (
+        f"version literal outside a metadata-reading module: {offenders}"
+    )
 
 
 def test_version_module_exposes_a_pep440_version() -> None:
-    assert isinstance(backup.__version__, str) and backup.__version__
+    assert isinstance(backup.__version__, str)
+    assert backup.__version__
     assert not backup.__version__.startswith("v"), "a v prefix is a tag, not a version"
 
 

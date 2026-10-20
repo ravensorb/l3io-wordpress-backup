@@ -34,7 +34,9 @@ def main() -> int:
         if leg.get("payload"):
             args = f"-e {leg['payload']}"
         else:
-            args = " ".join(f"--input {k}={v}" for k, v in (leg.get("inputs") or {}).items())
+            args = " ".join(
+                f"--input {k}={v}" for k, v in (leg.get("inputs") or {}).items()
+            )
         print(f"{leg['workflow']}\t{leg['event']}\t{args}")
     return 0
 

@@ -40,7 +40,7 @@ def _triggers(path: pathlib.Path) -> dict:
 
 
 def _covered() -> set[tuple[str, str]]:
-    return {(l["workflow"], l["event"]) for l in _table()["legs"]}
+    return {(leg["workflow"], leg["event"]) for leg in _table()["legs"]}
 
 
 def test_the_table_exists_and_has_legs() -> None:
@@ -85,7 +85,8 @@ def test_every_workflow_is_either_covered_or_explicitly_excluded() -> None:
 
 def test_every_exclusion_states_a_reason() -> None:
     for name, reason in _table().get("excluded", {}).items():
-        assert isinstance(reason, str) and len(reason) > 30, (
+        assert isinstance(reason, str)
+        assert len(reason) > 30, (
             f"{name} is excluded without a substantive reason; an unexplained "
             f"exclusion is how a workflow stops being checked and nobody notices"
         )
@@ -113,9 +114,9 @@ def test_every_choice_option_has_a_leg(wf: str) -> None:
     for name, spec in (wd.get("inputs") or {}).items():
         options = spec.get("options") or []
         seen = {
-            l.get("inputs", {}).get(name)
-            for l in _table()["legs"]
-            if l["workflow"] == wf and l["event"] == "workflow_dispatch"
+            leg.get("inputs", {}).get(name)
+            for leg in _table()["legs"]
+            if leg["workflow"] == wf and leg["event"] == "workflow_dispatch"
         }
         missing = [o for o in options if o not in seen]
         assert not missing, (

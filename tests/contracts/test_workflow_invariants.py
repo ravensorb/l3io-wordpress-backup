@@ -17,7 +17,9 @@ import pathlib
 import pytest
 import yaml
 
-WORKFLOWS = sorted((pathlib.Path(__file__).resolve().parents[2] / ".github/workflows").glob("*.yml"))
+WORKFLOWS = sorted(
+    (pathlib.Path(__file__).resolve().parents[2] / ".github/workflows").glob("*.yml")
+)
 
 
 def _jobs(path: pathlib.Path) -> dict:
@@ -68,7 +70,9 @@ def test_no_unguarded_wheel_glob(wf: pathlib.Path) -> None:
     for name, job in _jobs(wf).items():
         for i, step in enumerate(job.get("steps") or []):
             run = str(step.get("run", ""))
-            code = "\n".join(l for l in run.splitlines() if not l.lstrip().startswith("#"))
+            code = "\n".join(
+                line for line in run.splitlines() if not line.lstrip().startswith("#")
+            )
             if "ls dist/*.whl" in code:
                 offenders.append(f"{name}[step {i}]")
     assert not offenders, (
