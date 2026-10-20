@@ -1,7 +1,8 @@
 # Handoff — wordpress-backup
 
 - **Repo:** `l3io-wordpress-backup` (published as the distribution `l3io-wordpress-backup`)
-- **Branch:** `main` (renamed from `master` this session; CI triggers follow `main`)
+- **Branch:** `main` (renamed from `master` this session; CI triggers follow `main`). As of
+  2026-10-20 the work sits on `infisical-home-lab`, 4 commits ahead of `main`; see the last section.
 - **Written:** 2026-09-27 (KB pointers verified by reading note content, not search hits)
 - **Status:** active
 
@@ -231,11 +232,11 @@ note lives in the repo instead.
 
 ### Found 2026-10-12 — verify, then act
 
-- [todo] **The rewrite has never reached GitHub.** `origin/main` is still `5798e94`
+- [blocked] **The rewrite has never reached GitHub.** `origin/main` is still `5798e94`
   ("Bump version: 0.2.20 → 0.2.21"), and `main` is 36 commits ahead. GitHub Actions has no
   runs for this repository. The "CI green" claims above are `act` runs only. Pushing is
   Shawn's call.
-- [todo] **A full `pytest` fails at collection** on a fresh
+- [done 2026-10-20, `c74d319`] **A full `pytest` fails at collection** on a fresh
   `uv sync --locked --all-extras --dev`. The 4 legacy files in `tests/classes/` import
   `wpbackup2`, which imports `wpconfigr` and `wpdatabase2`; neither is in the lock.
   `ci.yml`'s test job runs the same unqualified `uv run pytest`, so the first real GitHub run
@@ -269,3 +270,54 @@ then database, then this repo. Here that means:
 - PyPI trusted publishing binds owner/repo/workflow. No `l3io-wordpress-*` name exists on
   PyPI or TestPyPI (checked 2026-10-12), so register publishers under the **new** repository
   names.
+
+---
+
+## Update — 2026-10-20: doctor, CI against the lock, sibling requests
+
+Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy7tf01cfd5vtqt`).
+
+### Done
+
+- [done] **`/l3io-doctor`: healthy.** The 26 checks run report 0 actions. Report-only notes:
+  26/26 stories are pre-provenance (no `Spec:` lines, expected, since elaboration never ran);
+  `adr-register next 1 ≤ 13` (it corrects itself on the next `adr-reserve`); 4 backlog items
+  `needs-review`; the agent-instruction block is absent (exit 1, which is Shawn's Check 24
+  decision, shared with config's open item 5). Activation refreshed `pm-status.py` 3.4.2 → 3.4.5:
+  `ab79caf`.
+- [done] **`c74d319` — CI's test and static jobs pass against the lock.** Both failed at
+  HEAD, not only pytest: `ruff check .` had 354 errors and 25 files were unformatted, so the
+  2026-09-27 "all 5 jobs green under act" claim did not hold by 2026-10-12. The legacy tree
+  (`wpbackup2/`, `tests/classes/`, `setup.py`, `test.py`, `README.md`) is **excluded, not
+  deleted**: pytest `--ignore` plus ruff `extend-exclude`, guarded by
+  `tests/contracts/test_legacy_test_exclusion.py`. Every guard was proved by planting the
+  violation. The full act run passed all 5 jobs, `MAKE_EXIT=0`, with no root-owned files.
+- [done] **`d85713f` — publish.yml**, the request from both siblings: push filter `v*` →
+  `v*.*.*`; `from-tag` comes from a `previous` step (the previous three-component tag, else
+  `baseline-pre-rewrite`) instead of `@latest-release`, which would have taken the floating
+  `v1.0` on the first release. 3 tests; the planted old state fails 2. Act dry-run: 9 legs ok.
+
+### Open — Shawn's
+
+- [blocked] **E002 arch-gate remediation route.** Unchanged; asked again 2026-10-20.
+- [blocked] **Push.** The work is on `infisical-home-lab` (`cd4598c` + 3 commits above),
+  ahead of `main`; `origin/main` is still `5798e94`. Merging into `main` and pushing are his.
+- [blocked] **Requests from `l3io-wordpress-database` that change design or documents:**
+  supersede ADR-0006 with `age` via `pyrage`; move AD-7/ADR-0003 ownership to database;
+  rewire stories 2.1/2.4/3.4/3.5/5.1 to the database API (these overlap the gate route,
+  since the stories are being rewritten anyway); re-pin the `database` extra once 0.1.0 is
+  on PyPI; the spine's single-provisioning-implementation note.
+- [blocked] **The document defects** (database's five plus config's item 4, which adds
+  ADR-0010): AD-30 is cited but undefined; AD-24 has no carve-out for AD-2; ADR-0007 names
+  the old script; ADR-0010 revisit condition (a) was met and fixed; ADR-0012 cites "a
+  version above 1.4"; ADR-0013 describes `make ci` wrongly. Not yet verified one by one.
+
+### Traps
+
+- **The `infisical` CLI here defaults to `app.infisical.com`** and fails with 403 "invalid
+  signature", although `~/.infisical/infisical-config.json` and the agent both name
+  `secops.ravenwolf.org`. `make ci` works with
+  `INFISICAL_API_URL=https://secops.ravenwolf.org/api`. This is host configuration, not
+  this repo's, so it is reported to Shawn and not fixed here.
+- **`ruff format .` formats Python blocks inside Markdown**, so it rewrote the legacy
+  README's example. That is why `README.md` is in the legacy exclude list.
