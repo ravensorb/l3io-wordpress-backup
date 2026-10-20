@@ -7,7 +7,7 @@ paradigm: 'ports and adapters (hexagonal) with a functional core'
 scope: 'l3io-wp-backup, l3io-wp-database and l3io-wp-config — the three packages published together as the WordPress backup and relocation family (ADR-0012; formerly wpbackup2, wpdatabase2 and the unpublished wpconfigr fork). A full rewrite, constrained by outward compatibility: the CLI and the archive format are preserved, the Python API is not'
 status: final
 created: '2026-09-15'
-updated: '2026-09-16'
+updated: '2026-10-20'
 binds: [FR-1..FR-29, NFR-1..NFR-8]
 sources:
   - '_bmad-output/planning-artifacts/prds/prd-py-wordpress-backup-2026-09-12/prd.md'
@@ -98,17 +98,19 @@ graph TD
 
 - **Binds:** FR-1, FR-3, FR-4, FR-10, and the §8 archive-format contract
 - **Prevents:** backup and restore drifting on the one thing they must agree on. Today `DB_DUMP_ARCNAME` and `WP_DIR_ARCNAME` are duplicated literals in two modules
-- **Rule:** one module in `domain/` owns member roles, the Manifest schema, the format version and the encryption envelope. Backup and restore both import from it; neither defines a member name. The layout is fixed:
+- **Rule:** one module in `domain/` owns member roles, the Manifest schema, the format version and which members are encrypted. Backup and restore both import from it; neither defines a member name. The layout is fixed:
 
   1. an **unencrypted tar container**;
-  2. `manifest.json` as its **first member, never encrypted** — it carries the format version, the KDF salt and parameters, the member index and the checksums, so an Archive can be identified, version-gated and have its salt read *before* any key exists.
-  3. per-member payloads, each encrypted independently when encryption is on.
+  2. `manifest.json` as its **first member, never encrypted** — it carries the format version, the member index, which members are encrypted and the checksums, so an Archive can be identified, version-gated and verified *before* any key exists. It carries no key material and no KDF parameters: an encrypted member is a standard `age` file with its own header ([ADR-0014](../../../../docs/adr/0014-age-encryption-via-database.md)).
+  3. per-member payloads, each encrypted independently as `age` when encryption is on, through `l3io-wp-database` (ADR-0014). A member swapped in from another Archive under the same key is caught by the checksums, which are over the stored ciphertext.
 
   **Reading v0.** Archives written before this rewrite have no Manifest: a plain `.tar.gz` with members `database.sql` and `wp-root/`. Restore detects that shape and reads it **by default, permanently** — not behind a legacy opt-in. A v0 Archive has no checksums, so Verification degrades to a structural check (expected members present, tar readable) and says so in its report rather than claiming an integrity guarantee it cannot make. Nothing writes v0.
 
   **Member roles are enumerated** — `dump`, `site-root`, `config` — and every member path is role-prefixed and non-escaping. A `wp-config.php` living outside the Site Root (FR-29) is carried as a `config`-role member with its original location recorded as Manifest *metadata*, never as a `../` path. Checksums are computed over **bytes as stored**. A Manifest is written on every Archive and read before every restore. The supported format range is derived from committed fixture Archives exercised in CI — never a hand-maintained list.
 
 ### AD-7 — Credentials reach a subprocess by file, never by argument or environment
+
+> **Mechanism delegated, 2026-10-20 ([ADR-0015](../../../../docs/adr/0015-credentials-delegated-to-database.md)).** `l3io-wp-database` v0.1.0 owns every MySQL client invocation (`dump`, `load`) and passes credentials through an anonymous-pipe option file (its ADR-0002), which is stronger than the on-disk `0600` file described below: nothing reaches disk and a crash leaves nothing behind. **This package invokes no MySQL client tool**, guarded by `tests/contracts/test_no_mysql_client.py`. The invariant still binds this package for everything it emits itself — enforcement items 1–4 below; item 5, the option file, is database's to assert. The text below is kept as the record of the original mechanism.
 
 - **Binds:** FR-15, NFR-3, every MySQL client invocation and every in-process database driver connection
 - **Prevents:** credential disclosure via `ps`/`/proc` and via logs — the current code passes `-p<password>` in `argv` and logs the full argument vector at DEBUG
@@ -266,7 +268,7 @@ graph TD
 
 ### AD-24 — Tracing is API-only and inert unless a host configures it
 
-- **Binds:** FR-20, NFR-6, every phase in AD-17, all three packages
+- **Binds:** FR-20, NFR-6, every phase in AD-17, `l3io-wp-backup` and `l3io-wp-database`. **Not `l3io-wp-config`:** AD-2 keeps it at zero runtime dependencies, permanently, and AD-2 wins — config emits no spans, and its callers trace around it
 - **Prevents:** two failure shapes at once — instrumentation that forces a tracing stack, a collector and a configuration burden onto an operator running this from cron, and the opposite, a library that goes dark inside a host application which *has* already invested in tracing
 - **Rule:** the packages depend on **`opentelemetry-api` only, never the SDK** — the pattern OpenTelemetry's own library guidelines mandate. One transitive dependency, and with no SDK configured it resolves to a `ProxyTracer` returning `NonRecordingSpan`: no output, no error, no cost. The SDK and an exporter live in an optional `otel` extra, and the umbrella `opentelemetry-exporter-otlp` is **forbidden** as a dependency because it pulls `grpcio`.
 
@@ -289,7 +291,7 @@ graph TD
 
 - **Binds:** FR-4, FR-8, AD-12, AD-22, NFR-3
 - **Prevents:** a plaintext Safety Snapshot arriving by default. AD-12 requires the Snapshot encrypted "when encryption is configured", but the preserved CLI has **no passphrase surface** — only `--admin-password` and `--new-db-password` — so a literally compliant build configures encryption never and writes a plaintext copy of the entire database to disk, which is precisely what shipping FR-4 in v1.0 exists to prevent
-- **Rule:** one declared passphrase-resolution chain — explicit argument, then environment variable, then an interactive prompt when a TTY is present — shared verbatim by both composition roots, so CLI and library callers resolve identically. AD-22 permits new flags, and the passphrase surface is one: adding it is required, not optional. **There is no silent plaintext Snapshot path.** If a Run would take a Safety Snapshot and no passphrase resolves, it either proceeds unencrypted *having said so explicitly in its output and logs*, or refuses — and which of those is the default is a product decision recorded before v1.0 ships, not a builder's choice.
+- **Rule:** one declared passphrase-resolution chain — explicit argument, then environment variable, then an interactive prompt when a TTY is present — shared verbatim by both composition roots, so CLI and library callers resolve identically. The resolved passphrase is handed to `l3io-wp-database`'s `passphrase=` (ADR-0014), which arrives in its **0.2.0**; until then only recipient/identity encryption is available, and the same chain unlocks a passphrase-protected identity file. AD-22 permits new flags, and the passphrase surface is one: adding it is required, not optional. **There is no silent plaintext Snapshot path.** If a Run would take a Safety Snapshot and no passphrase resolves, it either proceeds unencrypted *having said so explicitly in its output and logs*, or refuses — and which of those is the default is a product decision recorded before v1.0 ships, not a builder's choice.
 
 ### AD-27 — The `l3io.wp` namespace is PEP 420 native, in every distribution
 
@@ -320,6 +322,13 @@ graph TD
 - **Rule:** any check of whether a database, user or grant exists is performed with the **administrator** credentials. A failed login by the account being provisioned is evidence about the account, never about the database. No state enumeration may list a pre-provisioning "database absent" state as distinguishable from "account absent" when observed through the WordPress account; where the distinction is genuinely unreachable, the type says so rather than implying a precision the protocol cannot deliver.
 - **Consequence for AD-9:** this is a second, independent reason administrator credentials must be supplied explicitly rather than falling back to the WordPress credentials. The first is privilege escalation; this one is that the fallback makes existence unanswerable.
 - **Enforcement:** an integration test covering the reachable case — account exists, database does not — and a docstring on any "absent" state recording what cannot be observed and why. Found in `l3io-wp-database` by an integration test that asserted the unreachable state and failed: the code was right and the test was wrong.
+
+### AD-30 — The git tag is the version
+
+- **Binds:** all three packages, AD-15
+- **Prevents:** a release whose tag, distribution metadata and `__version__` disagree. The pre-rewrite packages kept the version in `setup.py`, `setup.cfg` and a `__version__.py`, synchronised by `bumpversion` — three literals and a tool to keep them equal
+- **Rule:** no version literal exists in any repository. `pyproject.toml` declares `dynamic = ["version"]` with `hatch-vcs` (`source = "vcs"`); the version is derived from the release tag at build time, and `__version__` reads it back from the installed distribution metadata. A tag is three components (`v<major>.<minor>.<patch>`); floating `v<major>` / `v<major>.<minor>` tags never start a publish and are never a version basis. A build off an untagged commit carries no local `+g<sha>` segment, because indexes reject it. Every checkout that builds fetches full history, or the version silently falls back
+- **Enforcement:** per repository — here `tests/contracts/test_version_single_source.py` (no literal outside a metadata-reading module) and `tests/contracts/test_workflow_invariants.py` (full-history checkouts, three-component publish filter). Config cites this rule as AD-30 and guards it with its own `tests/test_package_version.py`. Recorded 2026-10-20: config had been citing AD-30 while the spine stopped at AD-29
 
 ## Consistency Conventions
 
@@ -448,6 +457,6 @@ sequenceDiagram
 - **Multisite** — PRD non-goal; would change the Site Descriptor's cardinality.
 - **Scheduling internals** — FR-18 is v1.1 and may yet be cut to declarative config only.
 - **Concrete module tree below the layer directories** — the code owns it. Only the layer boundaries are fixed (AD-1).
-- **Whether `wpdatabase2` keeps a provisioning role at all** — AD-3 and AD-9 remove most of its current reason to exist as a separate package. Revisit after Release A. **Not deferred meanwhile:** database provisioning has exactly one implementation, in `wpdatabase2`, and `wpbackup2` never issues `CREATE DATABASE` or `GRANT` itself. Two provisioning paths would differ on collation and only one would fall inside AD-7's test scope.
+- **Whether `wpdatabase2` keeps a provisioning role at all** — AD-3 and AD-9 remove most of its current reason to exist as a separate package. Revisit after Release A. **Not deferred meanwhile:** database provisioning — creation **and destruction** — has exactly one implementation, in `l3io-wp-database` (`ensure`, `survey`, `drop_database`), and `l3io-wp-backup` never issues `CREATE DATABASE`, `GRANT` or `DROP DATABASE` itself (ADR-0015). Two provisioning paths would differ on collation and only one would fall inside AD-7's test scope.
 - **Thirteen lower-ranked divergence pairs** from the second adversarial pass remain open in `reviews/review-adversarial-divergence-delta.md` (E-6 onward), together with the prior pass's D-6, D-7 and D-8. The six release-blocking ones are closed by AD-23, AD-25, AD-26 and the AD-7 / AD-10 corrections; the remainder are recorded rather than silently dropped, and should be triaged before the first epic that touches the restore path.
 - **Data governance mechanics** (PRD §7.2) — retention as the erasure control surface, and the residency rule that no adapter relocates data between regions on its own initiative, are binding on every `ArchiveStore` adapter and land with FR-16/FR-17 in v1.1. Recorded here so they are not rediscovered then.
