@@ -1,6 +1,11 @@
 # ADR-0006: Archive format: manifest member, chunked AES-GCM under Argon2id
 
-- **Status:** Proposed
+> **Encryption superseded by [ADR-0014](0014-age-encryption-via-database.md).** Archives are
+> `age`, through `l3io-wp-database`, so this package owns no cryptographic construction.
+> What ADR-0014 keeps from here: the unencrypted first-member Manifest, its visibility
+> trade, and per-format fixture Archives in CI.
+
+- **Status:** Superseded by ADR-0014 (encryption); container layout carried by AD-6
 - **Date:** 2026-09-15
 - **Deciders:** Sanderson
 - **Epic:** n/a

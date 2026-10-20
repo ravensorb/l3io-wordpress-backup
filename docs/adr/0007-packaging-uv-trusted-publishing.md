@@ -36,8 +36,11 @@ where the code cannot explain why.
 
 **Every distribution in the family that has a command-line surface declares a console
 script under `[project.scripts]`, named for the distribution**, and keeps
-`python -m <import.path>` working alongside it rather than instead of it. `l3io-wp-config`
-ships `l3io-wp-config = "l3io.wp.config.cli.main:main"` on that basis.
+`python -m <import.path>` working alongside it rather than instead of it. `l3io-wordpress-config`
+ships `l3io-wordpress-config = "l3io.wp.config.cli.main:main"` and `l3io-wordpress-database`
+ships `l3io-wordpress-database = "l3io.wp.database.cli:main"` on that basis (both at v0.1.0;
+the script names follow the distribution names that ADR-0012's 2026-09-29 amendment
+settled, not the earlier `l3io-wp-*` form this section first recorded).
 
 **`l3io-wp-backup` is the deliberate exception and names its script `wpbackup2`.** AD-22
 freezes the outward CLI, so the entry point is named for the **preserved interface**, not

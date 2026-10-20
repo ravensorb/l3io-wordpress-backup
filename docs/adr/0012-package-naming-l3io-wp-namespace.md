@@ -48,7 +48,7 @@ Imports are a **PEP 420 native namespace** at `l3io.wp`. The discipline this dem
 
 **The two owned names get a final pointer release**, not abandonment: `wpbackup2` and `wpdatabase2` each ship one last version whose only dependency is the corresponding `l3io-wp-*` package, emitting a `DeprecationWarning` on import and naming the replacement. This is the only migration path PyPI offers — it has no rename, redirect or alias mechanism (warehouse #1919, still open). It also repairs `pip install wpbackup2` for everyone currently hitting `ResolutionImpossible`.
 
-**The fork is republished with corrected metadata** — this project's author, email and repository URL, a version above 1.4, and a README credit to Cariad Eccleston's MIT original. Shipping a package under our control that credits someone else and points bug reports at their repository is the specific thing being fixed.
+**The fork is republished with corrected metadata** — this project's author, email and repository URL, a new name (so PyPI's burned `wpconfigr-1.4` filename no longer applies), and a README credit to Cariad Eccleston's MIT original. Shipping a package under our control that credits someone else and points bug reports at their repository is the specific thing being fixed.
 
 ## Consequences
 
@@ -93,3 +93,12 @@ because reading the working tree is what produced the second instance.
 Console scripts are unaffected and do not follow the distribution rename:
 `l3io-wordpress-backup` still ships `wpbackup2` per AD-22, which ADR-0007 records
 as the outward-compatibility exception to naming a script for its distribution.
+
+## Amendment — 2026-10-20: the "above 1.4" version premise
+
+The Decision first required the republished fork to carry "a version above 1.4", which
+only mattered while it was to reuse the `wpconfigr` name, where PyPI had burned the
+`wpconfigr-1.4` filename. Under a new distribution name no filename is burned and no
+version floor applies. Every family package restarted its versioning: config and database
+released **v0.1.0**, and backup's first release is **1.0.0** (AD-22 makes its rewrite a
+major version). The body now says "a new name" where it said "a version above 1.4".

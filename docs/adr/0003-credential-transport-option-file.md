@@ -1,6 +1,10 @@
 # ADR-0003: Credentials reach MySQL clients by option file, never argv or MYSQL_PWD
 
-- **Status:** Proposed
+> **Superseded by [ADR-0015](0015-credentials-delegated-to-database.md).** `l3io-wp-database`
+> v0.1.0 owns `dump` and `load` and passes the same options through an anonymous pipe
+> (its ADR-0002), which never reaches disk. This package no longer invokes a client tool.
+
+- **Status:** Superseded by ADR-0015
 - **Date:** 2026-09-15
 - **Deciders:** Sanderson
 - **Epic:** n/a

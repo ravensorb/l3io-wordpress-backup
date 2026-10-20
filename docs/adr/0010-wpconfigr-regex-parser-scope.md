@@ -83,4 +83,15 @@ This converts the parser's blind spots from silent corruption into a loud, recov
 
 - Positive: the shared kernel stays dependency-free and installs everywhere; the limits are written down instead of discovered.
 - Negative: sites with unusual `wp-config.php` formatting are unsupported, and will be told so by a read-back failure rather than by a corrupted site.
+- **Revisit condition (a) was met, 2026-10-12** — and in a stronger form than written: not a
+  read-back failure but a silent corruption. WordPress's own salt generator emits `);` and
+  `;` inside quoted values (3 of 320 sampled salts, 7.5% of salt sets); the value pattern
+  ended at the first `);`, so `set()` wrote a PHP syntax error and **returned success**,
+  because read-back re-scanned with the same pattern. `DB_PASSWORD`, which a restore
+  rewrites, was exposed the same way. Fixed within this decision, at Shawn's direction, in
+  `l3io-wordpress-config` `c0be0f6` (quoted strings are atomic tokens; variables anchored at
+  column 0), released in v0.1.0. Condition (b) was checked and is not met: `lphply` needs
+  `ply` at runtime, which AD-2 forbids. **Lesson kept:** a read-back that re-scans with the
+  scanner it verifies cannot catch that scanner's bugs; config now also tests against
+  property-generated values dense in `);`, `')`, `\'` and `"`.
 - **Revisit when:** a read-back failure is reported against a `wp-config.php` that WordPress itself wrote (the type-fidelity fixes above should make this signal meaningful rather than noisy), **or** a maintained, pure-Python, round-tripping PHP-constant library appears. Either reopens this decision immediately.

@@ -1,0 +1,10 @@
+next: 16
+reserved:
+- number: 14
+  slug: age-encryption-via-database
+  epic: E002
+  reserved_at: '2026-10-20T17:49:11Z'
+- number: 15
+  slug: credentials-delegated-to-database
+  epic: E002
+  reserved_at: '2026-10-20T17:49:12Z'
