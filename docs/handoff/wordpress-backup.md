@@ -299,7 +299,11 @@ Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy
 
 ### Open — Shawn's
 
-- [blocked] **E002 arch-gate remediation route.** Unchanged; asked again 2026-10-20.
+- [done] **E002 arch-gate remediation route: route 1** (Shawn, 2026-10-20): elaborate all
+  26 stories, fix the `epics.md` defects, re-run the gate with both reviewers.
+  `/l3io-plan` step 02 has run; `planning-artifacts/readiness-report.md` exists (26 stories,
+  technical ACs Red→elaborate, business ACs Amber). Elaboration (step 03) waits on the
+  decisions below, because each one changes what the stories say.
 - [blocked] **Push.** The work is on `infisical-home-lab` (`cd4598c` + 3 commits above),
   ahead of `main`; `origin/main` is still `5798e94`. Merging into `main` and pushing are his.
 - [blocked] **Requests from `l3io-wordpress-database` that change design or documents:**
