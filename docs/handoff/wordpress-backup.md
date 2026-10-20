@@ -306,6 +306,18 @@ Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy
   decisions below, because each one changes what the stories say.
 - [blocked] **Push.** The work is on `infisical-home-lab` (`cd4598c` + 3 commits above),
   ahead of `main`; `origin/main` is still `5798e94`. Merging into `main` and pushing are his.
+- [done] **Gate decisions** (Shawn, 2026-10-20): build on the latest database and config
+  (database pinned to v0.1.0 = `78884da`, `0470fcf`; config v0.1.0 is current, no release
+  needed). Exit codes adopt database's `cli.Exit` (6 is reserved for the family) plus
+  backup-only codes; Storage Target grammar is `file://…`, bare path = `file:`, other schemes a
+  named error; story 2.7 restated on the backup path, restore clauses to E003; AG-1/2/4
+  ownership as recommended; the six document defects verified and to be fixed. The sprint
+  split (AG-28) is decided once story 2.4's shape is known.
+- [blocked] **Encryption: Shawn chose streaming passphrase encryption from
+  `l3io-wordpress-database` 0.2.0** (2026-10-20). Verified absent from v0.1.0 and every
+  database branch; pyrage 1.4.0's `passphrase` module is one-shot over whole bytes, and its
+  streaming calls take recipients only. Requested from the database session the same day.
+  AD-6, AD-26, ADR-0006's supersession and story 4.3 wait on its answer.
 - [blocked] **Requests from `l3io-wordpress-database` that change design or documents:**
   supersede ADR-0006 with `age` via `pyrage`; move AD-7/ADR-0003 ownership to database;
   rewire stories 2.1/2.4/3.4/3.5/5.1 to the database API (these overlap the gate route,
