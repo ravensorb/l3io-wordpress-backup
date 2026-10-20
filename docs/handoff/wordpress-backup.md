@@ -365,10 +365,16 @@ Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy
      (applied by `/l3io-plan reorg` after elaboration, because it re-keys them);
      `python -m wpbackup2` stays `xfail(strict)` until AD-22 decides the legacy tree;
      `platformdirs` becomes a runtime dependency.
-- [todo] **Config write defect** — `l3io-wordpress-config` v0.1.0's `WpConfigFile.set()`
-  turns a `0640` `wp-config.php` into `0644` (reproduced), does not fsync, and uses a
-  predictable temp name. Session `wordpress-config - wp-config write keeps mode`
-  (`cmvh5ers40uuftf01hxu2oa49`) was started 2026-10-20 at Shawn's request to fix it and
-  prepare 0.1.1; it replies here with the version to pin. AD-18 item 4 records it.
+- [blocked] **Config write defect — fixed, awaiting release.** `l3io-wordpress-config`
+  v0.1.0's `WpConfigFile.set()` turned a `0640` `wp-config.php` into `0644`, did not fsync,
+  and used a predictable temp name. Fixed by the config session (`cmvh5ers40uuftf01hxu2oa49`)
+  in `9aad51f` on its local branch `fix/write-preserves-mode` (not pushed, not tagged):
+  `mkstemp` in the same directory, the original's uid/gid then mode applied before any
+  content, file fsync, `os.replace`, directory fsync. Verified here against `9aad51f`: `0640`
+  kept, no temp left. **Pin `l3io-wordpress-config` v0.1.1 once Shawn releases it.** Two
+  behaviours restore must design for: `set()` raises `ConfigWriteError` and leaves the file
+  untouched when the owner cannot be kept (writer neither root nor the owner), and it
+  **never creates** a `wp-config.php` — so restoring into a Site Root with none
+  (E003-S01-001's OPEN) must lay down the Archive's `config` member first, then rewrite.
 - [todo] Next: the Epic 2 gap pass, then E005–E007, then `/l3io-plan reorg` (sprint
   move), then steps 04–06, then the E002 gate re-run with both reviewers.
