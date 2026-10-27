@@ -52,11 +52,16 @@ dependencies = [
 # REVERT CONDITION: when l3io-wordpress-database is publicly resolvable from the index a
 # consumer uses, this moves back into `dependencies` and the base-install check
 # below stops forbidding it.
-# l3io-wordpress-database is RELEASED at v0.1.0 (GitHub release and the internal
-# Gitea registry, 2026-10-20), the API this rewrite builds on: dump/load, survey,
-# ensure, drop_database, CredentialChain and age encryption.
+# l3io-wordpress-database: the API this rewrite builds on -- dump/load, survey,
+# ensure, drop_database, CredentialChain and age encryption -- released at v0.1.0
+# (2026-10-20). The source below pins 47384ba, past v0.1.0, for passphrase=
+# (ADR-0014). Its `encryption` extra is NOT taken yet: it requires the
+# l3io-age-passphrase binder, which is on GitHub Releases only, and uv does not
+# honour a dependency's own [tool.uv.sources], so taking it now would build the
+# Rust binder from source. Story E004-S01-003 adds the extra with a source for
+# the binder's release wheels.
 #
-# Pinned by REV at v0.1.0's commit rather than by the tag itself: a tag can be
+# Pinned by REV rather than by a tag: a tag can be
 # deleted or moved, and the lock would not notice -- the lock records
 # the resolved commit, not the ref that found it, so CI stays green on a
 # dependency no fresh clone can resolve. That trap cost py-wordpress-database a
@@ -105,8 +110,9 @@ wpbackup2 = "l3io.wp.backup.cli:run_from_cli"
 # Pinned to a rev, never a branch — a branch re-resolves on every `uv lock -U`.
 # `uv build --no-sources` keeps this out of published metadata (ADR-0007).
 [tool.uv.sources]
-# v0.1.0 = 78884da.
-l3io-wordpress-database = { git = "https://github.com/ravensorb/l3io-wordpress-database.git", rev = "78884dae9f45437cca906304bd52bf0e2ecfa3b6" }
+# 47384ba = v0.1.0 + streaming passphrase encryption (untagged; 0.2.0 not cut yet).
+# Pinned ahead of a tag at Shawn's direction, 2026-10-27. Re-pin to v0.2.0 when it exists.
+l3io-wordpress-database = { git = "https://github.com/ravensorb/l3io-wordpress-database.git", rev = "47384ba6840d38ac8fb66b663b4091eb403f2330" }
 # v0.1.1 = 4c842ca.
 l3io-wordpress-config = { git = "https://github.com/ravensorb/l3io-wordpress-config.git", rev = "4c842ca057ce4c4c1bf17831cc82a02605e88ebd" }
 
