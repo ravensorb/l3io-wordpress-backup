@@ -77,3 +77,34 @@ get right.
 - Passphrase archives cannot ship before database 0.2.0, and that needs a pyrage release.
 - **Revisit when:** database 0.2.0 cannot ship streaming passphrase IO without
   hand-rolling cryptography. That reopens AD-26, not this ADR's format choice.
+
+## Amendment — 2026-10-27: how the passphrase path was delivered
+
+Accepted by Shawn, 2026-10-27, superseding the passphrase bullet above where they differ.
+
+- **The upstream `pyrage` route did not land.** PR woodruffw/pyrage#171 was closed by the
+  maintainer, who asked for the problem in the author's own words; issue #172 is open
+  and unanswered (checked 2026-10-27). It is not a refusal on the merits, so if it lands it
+  is a candidate to replace the binder below.
+- **`l3io-wordpress-database` now streams `passphrase=`** (commit `47384ba`, untagged,
+  pushed to its `main`; 0.2.0 not cut). Two backends, chosen by
+  `L3IO_AGE_PASSPHRASE_BACKEND=auto|binder|cli` (database ADR-0003, amended 2026-10-26):
+  - **binder** (preferred): `l3io-age-passphrase` v0.1.0, a new family package — a PyO3
+    binding over the Rust `age` crate's own streaming passphrase encryptor. It wraps the
+    maintained implementation; it is not a hand-rolled construction. GitHub Release wheels
+    only, not on PyPI.
+  - **cli** (fallback): stock `age` ≥ 1.3 with `age-plugin-batchpass`, the secret on
+    `AGE_PASSPHRASE_FD`, never in argv. Rejected on 2026-10-20, accepted now as a
+    fallback where the binder wheel is not installed.
+- **This package pins database by rev to `47384ba`** (2026-10-27) and re-pins to v0.2.0
+  when it is tagged. It imports `encrypt`, `decrypt` and `check_passphrase` from the
+  package root, which 47384ba exports.
+- **The `encryption` extra is not taken yet.** It pulls the binder, and uv ignores a
+  dependency's own `[tool.uv.sources]`, so it would build the Rust binder from source.
+  Story E004-S01-003 adds it together with a source for the binder's release wheels.
+- **For the CLI fallback, AD-7's invariant extends to the passphrase:** it never appears
+  in an argument vector, environment or log. That is database's mechanism to assert, as
+  for credentials (ADR-0015); this package asserts only what it emits.
+- The consequence "passphrase archives cannot ship before database 0.2.0, and that needs a
+  pyrage release" no longer holds: they need database 0.2.0 (or this rev) and either the
+  binder wheel or `age` ≥ 1.3 present.

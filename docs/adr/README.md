@@ -21,7 +21,7 @@ which carries the invariants (`AD-n`). An ADR here records a *mechanism*; an `AD
 | [0012](0012-package-naming-l3io-wp-namespace.md) | Publish as the `l3io-wp-*` family under a PEP 420 namespace | **Accepted** | AD-2, AD-15, AD-27 |
 | [0011](0011-observability-structlog-plus-api-only-tracing.md) | structlog for logs; tracing API-only and inert unless a host configures it | Proposed | AD-10, AD-24 |
 | [0010](0010-wpconfigr-regex-parser-scope.md) | Keep the regex `wp-config.php` reader, with documented limits and whole-file read-back | Proposed | AD-2, AD-18 |
-| [0014](0014-age-encryption-via-database.md) | Archives are `age`, through `l3io-wp-database` | **Accepted** | AD-6, AD-21, AD-26 |
+| [0014](0014-age-encryption-via-database.md) | Archives are `age`, through `l3io-wp-database` (passphrase via binder or `age` CLI, amended 2026-10-27) | **Accepted** | AD-6, AD-21, AD-26 |
 | [0015](0015-credentials-delegated-to-database.md) | Credentials reach MySQL client tools only through `l3io-wp-database` | **Accepted** | AD-7, AD-29 |
 
 The spine carries 30 invariants (AD-1..AD-30). AD-16..AD-21 came from the reviewer gate: Run Context, phase ordering, recoverability, Site Lock, atomic publication, streaming. AD-22..AD-24 came from the rewrite mandate: the CLI as a frozen contract, archive-format detection with permanent v0 reads, and API-only tracing. AD-25..AD-27 close the flag-to-mode map, the passphrase chain, and the PEP 420 namespace discipline. AD-28 and AD-29 came from the database work (GRANT escaping, administrator-answered existence); AD-30 records the git tag as the only version.

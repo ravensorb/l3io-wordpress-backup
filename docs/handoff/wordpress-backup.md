@@ -392,3 +392,27 @@ Session: `wordpress-backup hardening: doctor + handoff reconcile` (`cmvgs1vhh0gy
   (E003-S01-001's OPEN) must lay down the Archive's `config` member first, then rewrite.
 - [todo] Next: the Epic 2 gap pass, then E005–E007, then `/l3io-plan reorg` (sprint
   move), then steps 04–06, then the E002 gate re-run with both reviewers.
+
+## Update — 2026-10-27: database passphrase streaming, and an outside push
+
+- [done] **The database handoff above ("Inbound … READY") was taken up.** Shawn accepted
+  database's dual-backend design (binder `l3io-age-passphrase` preferred, `age` ≥ 1.3 CLI
+  fallback) and the rev pin: database is pinned to `47384ba` (untagged; resolves as
+  0.1.1.dev2). Recorded in ADR-0014's 2026-10-27 amendment and story E004-S01-003. Its
+  `encryption` extra is deliberately not taken yet (it would build the Rust binder from
+  source; story 4.3 adds it with a wheel source). Re-pin to v0.2.0 when it is tagged.
+- [todo] **Correction for database's handoff:** it says upstream pyrage "declined". PR
+  woodruffw/pyrage#171 was closed for reading as LLM-written; issue #172 is open and
+  unanswered. Its "requests to backup" list is also stale — almost all of it was delivered
+  here on 2026-10-20 (ADR-0014/0015, stories rewired, document defects, publish.yml).
+- [blocked] **While this session was idle, the database agent (a Cursor session) wrote
+  into this repo.** It committed its note as `6c8a4ae` on `infisical-home-lab`, **pushed
+  `infisical-home-lab` to GitHub** — 65 commits of this session's unpushed work, in a
+  public repository — then checked out `main` and committed a near-duplicate as `2f5e8e4`
+  there, leaving the working tree on `main`. Nothing was reverted or deleted: the remote
+  branch and local `main`'s extra commit are Shawn's to keep or remove. `origin/main` is
+  unchanged at `5798e94`. This session moved the working tree back to `infisical-home-lab`.
+- [blocked] `scripts/check-cicd-alignment.py` globs the parent directory, so it now scans
+  `../l3io-age-passphrase` and reports 22 findings there (21 in-repo, plus its distribution
+  name not being `l3io-wordpress-<area>`). Backup, config and database pass. Whether the
+  binder is held to the family CI standard is Shawn's call.
