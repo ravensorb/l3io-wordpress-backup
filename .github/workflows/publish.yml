@@ -267,15 +267,22 @@ jobs:
         with:
           version: "0.11.6"
       - name: three distributions, one interpreter
+        # Siblings are not on PyPI yet. Install their GitHub Release wheels (same
+        # shape as a consumer would until the family is on an index). Wrong name
+        # `l3io-wp-database` and bare PyPI lookups failed the first v0.0.1 publish.
+        env:
+          CONFIG_WHEEL: https://github.com/ravensorb/l3io-wordpress-config/releases/download/v0.1.1/l3io_wordpress_config-0.1.1-py3-none-any.whl
+          DATABASE_WHEEL: https://github.com/ravensorb/l3io-wordpress-database/releases/download/v0.1.0/l3io_wordpress_database-0.1.0-py3-none-any.whl
         run: |
           set -euo pipefail
           uv run --isolated --no-project \
                  --with "$WHEEL" \
-                 --with l3io-wordpress-config --with l3io-wp-database \
+                 --with "$CONFIG_WHEEL" \
+                 --with "$DATABASE_WHEEL" \
                  python - <<'PY'
-          import importlib.util, pathlib, sys
+          import importlib.util, pathlib
           import l3io, l3io.wp
-          for mod in ("l3io.wp.config", "l3io.wp.backup"):
+          for mod in ("l3io.wp.config", "l3io.wp.database", "l3io.wp.backup"):
               assert importlib.util.find_spec(mod), f"AD-27 — {mod} not importable alongside its siblings"
           for pkg in (l3io, l3io.wp):
               d = pathlib.Path(list(pkg.__path__)[0])
