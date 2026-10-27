@@ -69,6 +69,11 @@ jobs:
       - name: what is the latest release tag?
         if: inputs.bump != 'dev'
         id: latest
+        # The action errors (rather than exists=false) when the only remote tag is
+        # baseline-pre-rewrite and nothing matches v*.*.* — that is the first-release
+        # case this workflow already handles below. continue-on-error lets compute
+        # treat a failed lookup as "no release tag yet".
+        continue-on-error: true
         uses: LiquidLogicLabs/git-action-tag-info@v2
         with:
           tag-name: latest
@@ -90,6 +95,7 @@ jobs:
         id: next
         env:
           BUMP: ${{ inputs.bump }}
+          LATEST_OK: ${{ steps.latest.outcome }}
           HAS_TAG: ${{ steps.latest.outputs.exists }}
           IS_VALID: ${{ steps.parsed.outputs.is-valid }}
           LATEST: ${{ steps.latest.outputs.name }}
@@ -102,7 +108,8 @@ jobs:
           # No release tag yet: this is the first one. Stated explicitly rather
           # than incrementing from an assumed 0.0.0, so the first release is a
           # deliberate number and not an artefact of the arithmetic.
-          if [ "${HAS_TAG}" != "true" ]; then
+          # A failed tag-info lookup (no v*.*.* tags) counts the same as exists=false.
+          if [ "${LATEST_OK}" != "success" ] || [ "${HAS_TAG}" != "true" ]; then
             # v0.0.1, matching py-wordpress-database and py-wpconfigr, which both
             # already start here. This repo was the only one still saying 1.0.0.
             #
