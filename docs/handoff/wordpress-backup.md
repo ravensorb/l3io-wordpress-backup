@@ -1,17 +1,26 @@
 # Handoff — wordpress-backup
 
 - **Repo:** `l3io-wordpress-backup` (published as the distribution `l3io-wordpress-backup`)
-- **Branch:** `main` (renamed from `master` this session; CI triggers follow `main`). On
-  2026-10-27 local `main` was fast-forwarded to the former `infisical-home-lab` branch (all
-  of this rewrite's work) and that local branch deleted; local `main` is 67 commits ahead of
-  `origin/main` and **not pushed**. `origin/infisical-home-lab` (pushed by the database
-  agent, at `6c8a4ae`) still exists on GitHub — Shawn's to keep or delete.
+- **Branch:** `main` (CI triggers follow `main`). Pushed 2026-10-27; rewrite work is on
+  `origin/main`. First GitHub Release: **v0.0.1**.
 - **Written:** 2026-09-27 (KB pointers verified by reading note content, not search hits)
 - **Status:** active
 
 ## Resume line
 
 > You are `wordpress-backup`. Read `docs/handoff/wordpress-backup.md` in this repo, then continue.
+
+## Session note (2026-10-27) — main pushed, v0.0.1 on GitHub
+
+The database agent pushed `main`, CI went green, and cut the first release:
+
+- **Release:** https://github.com/ravensorb/l3io-wordpress-backup/releases/tag/v0.0.1  
+  Assets: `l3io_wordpress_backup-0.0.1-py3-none-any.whl` + sdist (GitHub only; not PyPI).
+- **Fixes landed with that release path:** first-tag lookup when only
+  `baseline-pre-rewrite` exists; AD-27 namespace job installs sibling wheels from
+  GitHub Releases (not PyPI / wrong `l3io-wp-database` name).
+- Continue from `main` at / after `v0.0.1`. Next work: consume database passphrase
+  streaming (inbound below) / Epic implementation as planned.
 
 ## Inbound from wordpress-database (2026-10-27) — READY
 
