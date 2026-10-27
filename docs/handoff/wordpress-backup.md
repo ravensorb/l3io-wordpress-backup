@@ -1,8 +1,11 @@
 # Handoff — wordpress-backup
 
 - **Repo:** `l3io-wordpress-backup` (published as the distribution `l3io-wordpress-backup`)
-- **Branch:** `main` (renamed from `master` this session; CI triggers follow `main`). As of
-  2026-10-20 the work sits on `infisical-home-lab`, 4 commits ahead of `main`; see the last section.
+- **Branch:** `main` (renamed from `master` this session; CI triggers follow `main`). On
+  2026-10-27 local `main` was fast-forwarded to the former `infisical-home-lab` branch (all
+  of this rewrite's work) and that local branch deleted; local `main` is 67 commits ahead of
+  `origin/main` and **not pushed**. `origin/infisical-home-lab` (pushed by the database
+  agent, at `6c8a4ae`) still exists on GitHub — Shawn's to keep or delete.
 - **Written:** 2026-09-27 (KB pointers verified by reading note content, not search hits)
 - **Status:** active
 
