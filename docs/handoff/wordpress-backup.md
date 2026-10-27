@@ -10,6 +10,20 @@
 
 > You are `wordpress-backup`. Read `docs/handoff/wordpress-backup.md` in this repo, then continue.
 
+## Inbound from wordpress-database (2026-10-27) — READY
+
+Streaming passphrase encryption is available on
+[`l3io-wordpress-database` `main`](https://github.com/ravensorb/l3io-wordpress-database):
+
+- Package-root API: `encrypt`, `decrypt`, `check_passphrase`, `check_recipients`,
+  `generate_identity` — use `passphrase=` (mutually exclusive with recipients/identities).
+- Binder: [`l3io-age-passphrase` v0.1.0](https://github.com/ravensorb/l3io-age-passphrase/releases/tag/v0.1.0)
+  (GitHub Release wheels; install manylinux/musllinux in images).
+- Details: database `docs/adr/0003-age-encryption.md` and
+  `docs/handoff/wordpress-database.md` § “streaming passphrase encryption”.
+- You can supersede ADR-0006 / AD-26 against this path now (depend on database
+  `main` + `encryption` extra until 0.2.0 is on an index).
+
 ---
 
 ## What this session owns
